@@ -3,5 +3,8 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
   }
 }
