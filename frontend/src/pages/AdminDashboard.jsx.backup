@@ -1,14 +1,12 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
   Car, MessageSquare, Plus, Edit2, Trash2, 
-  X, Check, Eye, LayoutDashboard, LogOut, Lock
+  X, Check, LayoutDashboard, LogOut, Lock,
+  Upload, Image, Video, Clock
 } from 'lucide-react';
 
 const AdminDashboard = () => {
-  const navigate = useNavigate();
-  
   // Auth state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -28,10 +26,14 @@ const AdminDashboard = () => {
     title: '', brand: '', model: '', year: new Date().getFullYear(),
     mileage: '', engine: '', transmission: '', fuel_type: 'Petrol',
     color: '', body_type: '', description: '', features: '',
-    images: '', status: 'available', featured: false
+    images: [], videos: [], status: 'available', featured: false
   });
+  
+  // Upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef(null);
 
-  // Check if already logged in
   useEffect(() => {
     const token = localStorage.getItem('adminToken');
     if (token) {
@@ -96,14 +98,77 @@ const AdminDashboard = () => {
     }
   };
 
+  // FILE UPLOAD HANDLER
+  const handleFileUpload = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    setUploadProgress(0);
+
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files', files[i]);
+    }
+
+    try {
+      const response = await axios.post('/api/cars/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(progress);
+        }
+      });
+
+      const uploadedFiles = response.data.files;
+      const newImages = [...carForm.images];
+      const newVideos = [...carForm.videos];
+
+      uploadedFiles.forEach(file => {
+        if (file.type === 'video') {
+          newVideos.push(file.url);
+        } else {
+          newImages.push(file.url);
+        }
+      });
+
+      setCarForm({ ...carForm, images: newImages, videos: newVideos });
+      alert(`${uploadedFiles.length} file(s) uploaded successfully!`);
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Failed to upload files. Please try again.');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const removeMedia = (type, index) => {
+    if (type === 'image') {
+      const newImages = [...carForm.images];
+      newImages.splice(index, 1);
+      setCarForm({ ...carForm, images: newImages });
+    } else {
+      const newVideos = [...carForm.videos];
+      newVideos.splice(index, 1);
+      setCarForm({ ...carForm, videos: newVideos });
+    }
+  };
+
   const handleCarSubmit = async (e) => {
     e.preventDefault();
     try {
       const payload = {
         ...carForm,
         year: parseInt(carForm.year),
-        features: carForm.features.split(',').map(f => f.trim()).filter(f => f),
-        images: carForm.images.split(',').map(i => i.trim()).filter(i => i)
+        features: typeof carForm.features === 'string' 
+          ? carForm.features.split(',').map(f => f.trim()).filter(f => f)
+          : carForm.features,
+        images: carForm.images,
+        videos: carForm.videos
       };
 
       if (editingCar) {
@@ -135,14 +200,22 @@ const AdminDashboard = () => {
   const handleEditCar = (car) => {
     setEditingCar(car);
     setCarForm({
-      title: car.title, brand: car.brand, model: car.model, year: car.year,
-      mileage: car.mileage || '', engine: car.engine || '', 
-      transmission: car.transmission || '', fuel_type: car.fuel_type || 'Petrol',
-      color: car.color || '', body_type: car.body_type || '', 
+      title: car.title,
+      brand: car.brand,
+      model: car.model,
+      year: car.year,
+      mileage: car.mileage || '',
+      engine: car.engine || '',
+      transmission: car.transmission || '',
+      fuel_type: car.fuel_type || 'Petrol',
+      color: car.color || '',
+      body_type: car.body_type || '',
       description: car.description || '',
       features: car.features?.join(', ') || '',
-      images: car.images?.join(', ') || '',
-      status: car.status, featured: car.featured === 1
+      images: car.images || [],
+      videos: car.videos || [],
+      status: car.status,
+      featured: car.featured === 1
     });
     setShowCarForm(true);
   };
@@ -161,11 +234,11 @@ const AdminDashboard = () => {
       title: '', brand: '', model: '', year: new Date().getFullYear(),
       mileage: '', engine: '', transmission: '', fuel_type: 'Petrol',
       color: '', body_type: '', description: '', features: '',
-      images: '', status: 'available', featured: false
+      images: [], videos: [], status: 'available', featured: false
     });
   };
 
-  // Login Screen
+  // LOGIN SCREEN
   if (!isLoggedIn) {
     return (
       <div style={{
@@ -198,17 +271,10 @@ const AdminDashboard = () => {
             <Lock size={32} color="#fff" />
           </div>
           
-          <h1 style={{
-            fontSize: '1.8rem',
-            fontWeight: '700',
-            textAlign: 'center',
-            marginBottom: '8px'
-          }}>Admin Panel</h1>
-          <p style={{
-            textAlign: 'center',
-            color: '#737373',
-            marginBottom: '32px'
-          }}>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: '700', textAlign: 'center', marginBottom: '8px' }}>
+            Admin Panel
+          </h1>
+          <p style={{ textAlign: 'center', color: '#737373', marginBottom: '32px' }}>
             Sign in to manage your inventory
           </p>
 
@@ -248,8 +314,7 @@ const AdminDashboard = () => {
                   padding: '16px',
                   border: '2px solid #e5e5e5',
                   borderRadius: '12px',
-                  fontSize: '1rem',
-                  transition: 'border-color 0.3s'
+                  fontSize: '1rem'
                 }}
               />
             </div>
@@ -293,8 +358,7 @@ const AdminDashboard = () => {
                 fontSize: '1rem',
                 fontWeight: '600',
                 cursor: loginLoading ? 'not-allowed' : 'pointer',
-                opacity: loginLoading ? 0.7 : 1,
-                boxShadow: '0 8px 25px rgba(196,30,58,0.3)'
+                opacity: loginLoading ? 0.7 : 1
               }}
             >
               {loginLoading ? 'Signing In...' : 'Sign In'}
@@ -308,9 +372,7 @@ const AdminDashboard = () => {
             borderRadius: '12px',
             textAlign: 'center'
           }}>
-            <p style={{ fontSize: '0.75rem', color: '#737373', marginBottom: '8px' }}>
-              Default Credentials
-            </p>
+            <p style={{ fontSize: '0.75rem', color: '#737373', marginBottom: '8px' }}>Default Credentials</p>
             <p style={{ fontSize: '0.9rem', color: '#525252' }}>
               <strong>admin@noor.com</strong> / <strong>admin123</strong>
             </p>
@@ -322,13 +384,7 @@ const AdminDashboard = () => {
 
   if (loading && !stats) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#f5f5f5'
-      }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5' }}>
         <div className="spinner" />
       </div>
     );
@@ -392,7 +448,6 @@ const AdminDashboard = () => {
                 fontSize: '0.95rem',
                 fontWeight: '500',
                 cursor: 'pointer',
-                transition: 'all 0.3s ease',
                 textAlign: 'left'
               }}
             >
@@ -439,13 +494,11 @@ const AdminDashboard = () => {
         {/* Dashboard Tab */}
         {activeTab === 'dashboard' && (
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '40px' }}>
-              Dashboard Overview
-            </h1>
+            <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '40px' }}>Dashboard Overview</h1>
 
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
               gap: '24px',
               marginBottom: '48px'
             }}>
@@ -453,6 +506,7 @@ const AdminDashboard = () => {
                 { label: 'Total Cars', value: stats?.totalCars || 0, color: '#c41e3a' },
                 { label: 'Available', value: stats?.availableCars || 0, color: '#22c55e' },
                 { label: 'Reserved', value: stats?.reservedCars || 0, color: '#f59e0b' },
+                { label: 'Upcoming', value: cars.filter(c => c.status === 'upcoming').length, color: '#8b5cf6' },
                 { label: 'Inquiries', value: stats?.totalInquiries || 0, color: '#3b82f6' }
               ].map((stat, i) => (
                 <div key={i} style={{
@@ -469,12 +523,7 @@ const AdminDashboard = () => {
                     color: '#737373',
                     marginBottom: '12px'
                   }}>{stat.label}</p>
-                  <p style={{
-                    fontSize: '3rem',
-                    fontWeight: '700',
-                    color: stat.color,
-                    lineHeight: 1
-                  }}>{stat.value}</p>
+                  <p style={{ fontSize: '3rem', fontWeight: '700', color: stat.color, lineHeight: 1 }}>{stat.value}</p>
                 </div>
               ))}
             </div>
@@ -504,8 +553,7 @@ const AdminDashboard = () => {
                   borderRadius: '12px',
                   fontSize: '0.9rem',
                   fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: '0 8px 25px rgba(196,30,58,0.3)'
+                  cursor: 'pointer'
                 }}
               >
                 <Plus size={20} />
@@ -556,9 +604,16 @@ const AdminDashboard = () => {
                           borderRadius: '20px',
                           fontSize: '0.75rem',
                           fontWeight: '600',
-                          background: car.status === 'available' ? '#dcfce7' : car.status === 'reserved' ? '#fef3c7' : '#f3f4f6',
-                          color: car.status === 'available' ? '#166534' : car.status === 'reserved' ? '#92400e' : '#374151'
-                        }}>{car.status}</span>
+                          background: car.status === 'available' ? '#dcfce7' : 
+                                     car.status === 'reserved' ? '#fef3c7' : 
+                                     car.status === 'upcoming' ? '#ede9fe' : '#f3f4f6',
+                          color: car.status === 'available' ? '#166534' : 
+                                car.status === 'reserved' ? '#92400e' : 
+                                car.status === 'upcoming' ? '#7c3aed' : '#374151'
+                        }}>
+                          {car.status === 'upcoming' && <Clock size={12} style={{ marginRight: '4px', display: 'inline' }} />}
+                          {car.status}
+                        </span>
                       </td>
                       <td style={{ padding: '18px 20px' }}>
                         {car.featured === 1 ? <Check size={20} color="#22c55e" /> : <X size={20} color="#d4d4d4" />}
@@ -593,31 +648,15 @@ const AdminDashboard = () => {
         {/* Inquiries Tab */}
         {activeTab === 'inquiries' && (
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '40px' }}>
-              Customer Inquiries
-            </h1>
+            <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '40px' }}>Customer Inquiries</h1>
 
-            <div style={{
-              background: '#fff',
-              borderRadius: '20px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.04)'
-            }}>
+            <div style={{ background: '#fff', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
               {inquiries.length === 0 ? (
-                <div style={{ padding: '80px', textAlign: 'center', color: '#737373' }}>
-                  No inquiries yet
-                </div>
+                <div style={{ padding: '80px', textAlign: 'center', color: '#737373' }}>No inquiries yet</div>
               ) : (
                 inquiries.map(inq => (
-                  <div key={inq.id} style={{
-                    padding: '28px',
-                    borderBottom: '1px solid #f5f5f5'
-                  }}>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      marginBottom: '16px'
-                    }}>
+                  <div key={inq.id} style={{ padding: '28px', borderBottom: '1px solid #f5f5f5' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                       <div>
                         <h4 style={{ fontWeight: '600', marginBottom: '4px' }}>{inq.name}</h4>
                         <p style={{ fontSize: '0.85rem', color: '#737373' }}>
@@ -678,7 +717,7 @@ const AdminDashboard = () => {
           <div style={{
             background: '#fff',
             width: '100%',
-            maxWidth: '700px',
+            maxWidth: '800px',
             maxHeight: '90vh',
             overflow: 'auto',
             borderRadius: '24px'
@@ -688,7 +727,11 @@ const AdminDashboard = () => {
               borderBottom: '1px solid #f0f0f0',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center'
+              alignItems: 'center',
+              position: 'sticky',
+              top: 0,
+              background: '#fff',
+              zIndex: 10
             }}>
               <h2 style={{ fontSize: '1.5rem', fontWeight: '700' }}>
                 {editingCar ? 'Edit Car' : 'Add New Car'}
@@ -708,37 +751,44 @@ const AdminDashboard = () => {
 
             <form onSubmit={handleCarSubmit} style={{ padding: '28px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+                {/* Basic Info */}
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Title *</label>
                   <input type="text" className="form-input" required value={carForm.title}
                     onChange={(e) => setCarForm({ ...carForm, title: e.target.value })}
                     placeholder="e.g., Toyota Supra MK4 Twin Turbo" />
                 </div>
+                
                 <div>
                   <label className="form-label">Brand *</label>
                   <input type="text" className="form-input" required value={carForm.brand}
                     onChange={(e) => setCarForm({ ...carForm, brand: e.target.value })} placeholder="Toyota" />
                 </div>
+                
                 <div>
                   <label className="form-label">Model *</label>
                   <input type="text" className="form-input" required value={carForm.model}
                     onChange={(e) => setCarForm({ ...carForm, model: e.target.value })} placeholder="Supra MK4" />
                 </div>
+                
                 <div>
                   <label className="form-label">Year *</label>
                   <input type="number" className="form-input" required min="1900" max="2030" value={carForm.year}
                     onChange={(e) => setCarForm({ ...carForm, year: e.target.value })} />
                 </div>
+                
                 <div>
                   <label className="form-label">Mileage</label>
                   <input type="text" className="form-input" value={carForm.mileage}
                     onChange={(e) => setCarForm({ ...carForm, mileage: e.target.value })} placeholder="45,000 km" />
                 </div>
+                
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Engine</label>
                   <input type="text" className="form-input" value={carForm.engine}
                     onChange={(e) => setCarForm({ ...carForm, engine: e.target.value })} placeholder="2JZ-GTE 3.0L Twin Turbo" />
                 </div>
+                
                 <div>
                   <label className="form-label">Transmission</label>
                   <select className="form-input form-select" value={carForm.transmission}
@@ -750,6 +800,7 @@ const AdminDashboard = () => {
                     <option value="CVT">CVT</option>
                   </select>
                 </div>
+                
                 <div>
                   <label className="form-label">Fuel Type</label>
                   <select className="form-input form-select" value={carForm.fuel_type}
@@ -757,13 +808,16 @@ const AdminDashboard = () => {
                     <option value="Petrol">Petrol</option>
                     <option value="Diesel">Diesel</option>
                     <option value="Hybrid">Hybrid</option>
+                    <option value="Electric">Electric</option>
                   </select>
                 </div>
+                
                 <div>
                   <label className="form-label">Color</label>
                   <input type="text" className="form-input" value={carForm.color}
                     onChange={(e) => setCarForm({ ...carForm, color: e.target.value })} placeholder="Super White" />
                 </div>
+                
                 <div>
                   <label className="form-label">Body Type</label>
                   <select className="form-input form-select" value={carForm.body_type}
@@ -773,25 +827,213 @@ const AdminDashboard = () => {
                     <option value="Coupe">Coupe</option>
                     <option value="SUV">SUV</option>
                     <option value="Hatchback">Hatchback</option>
+                    <option value="Truck">Truck</option>
+                    <option value="Van">Van</option>
                   </select>
                 </div>
+                
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Description</label>
                   <textarea className="form-input form-textarea" value={carForm.description}
-                    onChange={(e) => setCarForm({ ...carForm, description: e.target.value })} rows={3} />
+                    onChange={(e) => setCarForm({ ...carForm, description: e.target.value })} rows={3}
+                    placeholder="Describe the vehicle..." />
                 </div>
+                
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Features (comma separated)</label>
                   <input type="text" className="form-input" value={carForm.features}
                     onChange={(e) => setCarForm({ ...carForm, features: e.target.value })}
                     placeholder="Leather Interior, Sunroof, Navigation" />
                 </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">Image URLs (comma separated)</label>
-                  <input type="text" className="form-input" value={carForm.images}
-                    onChange={(e) => setCarForm({ ...carForm, images: e.target.value })}
-                    placeholder="https://example.com/image1.jpg" />
+
+                {/* FILE UPLOAD SECTION */}
+                <div style={{ gridColumn: 'span 2', marginTop: '20px' }}>
+                  <label className="form-label">Images & Videos</label>
+                  
+                  <div style={{
+                    border: '2px dashed #e5e5e5',
+                    borderRadius: '16px',
+                    padding: '32px',
+                    textAlign: 'center',
+                    background: '#fafafa',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = '#c41e3a'; }}
+                  onDragLeave={(e) => { e.currentTarget.style.borderColor = '#e5e5e5'; }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.borderColor = '#e5e5e5';
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                      const event = { target: { files } };
+                      handleFileUpload(event);
+                    }
+                  }}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept="image/*,video/*"
+                      onChange={handleFileUpload}
+                      style={{ display: 'none' }}
+                    />
+                    
+                    {uploading ? (
+                      <div>
+                        <div className="spinner" style={{ margin: '0 auto 16px', width: '40px', height: '40px' }} />
+                        <p style={{ color: '#737373' }}>Uploading... {uploadProgress}%</p>
+                        <div style={{
+                          width: '100%',
+                          height: '8px',
+                          background: '#e5e5e5',
+                          borderRadius: '4px',
+                          marginTop: '12px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${uploadProgress}%`,
+                            height: '100%',
+                            background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
+                            transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload size={40} color="#c41e3a" style={{ marginBottom: '16px' }} />
+                        <p style={{ fontWeight: '600', color: '#0a0a0a', marginBottom: '8px' }}>
+                          Click to upload or drag & drop
+                        </p>
+                        <p style={{ fontSize: '0.85rem', color: '#737373' }}>
+                          Images (JPG, PNG, WebP) & Videos (MP4, WebM, MOV)
+                        </p>
+                        <p style={{ fontSize: '0.75rem', color: '#a3a3a3', marginTop: '8px' }}>
+                          Max 100MB per file
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Uploaded Images Preview */}
+                  {carForm.images.length > 0 && (
+                    <div style={{ marginTop: '20px' }}>
+                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Image size={16} /> Images ({carForm.images.length})
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                        {carForm.images.map((img, index) => (
+                          <div key={index} style={{ position: 'relative' }}>
+                            <img src={img} alt={`Upload ${index + 1}`} style={{
+                              width: '100px',
+                              height: '80px',
+                              objectFit: 'cover',
+                              borderRadius: '10px',
+                              border: '2px solid #e5e5e5'
+                            }} />
+                            <button
+                              type="button"
+                              onClick={() => removeMedia('image', index)}
+                              style={{
+                                position: 'absolute',
+                                top: '-8px',
+                                right: '-8px',
+                                width: '24px',
+                                height: '24px',
+                                background: '#dc2626',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '50%',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Uploaded Videos Preview */}
+                  {carForm.videos.length > 0 && (
+                    <div style={{ marginTop: '20px' }}>
+                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Video size={16} /> Videos ({carForm.videos.length})
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                        {carForm.videos.map((vid, index) => (
+                          <div key={index} style={{ position: 'relative' }}>
+                            <video src={vid} style={{
+                              width: '120px',
+                              height: '80px',
+                              objectFit: 'cover',
+                              borderRadius: '10px',
+                              border: '2px solid #e5e5e5'
+                            }} />
+                            <button
+                              type="button"
+                              onClick={() => removeMedia('video', index)}
+                              style={{
+                                position: 'absolute',
+                                top: '-8px',
+                                right: '-8px',
+                                width: '24px',
+                                height: '24px',
+                                background: '#dc2626',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '50%',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OR Enter URLs Manually */}
+                  <div style={{ marginTop: '20px' }}>
+                    <p style={{ fontSize: '0.8rem', color: '#737373', marginBottom: '8px' }}>
+                      Or enter image URLs manually (comma separated):
+                    </p>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="https://example.com/image1.jpg, https://example.com/image2.jpg"
+                      onChange={(e) => {
+                        const urls = e.target.value.split(',').map(u => u.trim()).filter(u => u);
+                        if (urls.length > 0) {
+                          setCarForm({ ...carForm, images: [...carForm.images, ...urls] });
+                          e.target.value = '';
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const urls = e.target.value.split(',').map(u => u.trim()).filter(u => u);
+                          if (urls.length > 0) {
+                            setCarForm({ ...carForm, images: [...carForm.images, ...urls] });
+                            e.target.value = '';
+                          }
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
+
+                {/* Status & Featured */}
                 <div>
                   <label className="form-label">Status</label>
                   <select className="form-input form-select" value={carForm.status}
@@ -799,8 +1041,10 @@ const AdminDashboard = () => {
                     <option value="available">Available</option>
                     <option value="reserved">Reserved</option>
                     <option value="sold">Sold</option>
+                    <option value="upcoming">Upcoming</option>
                   </select>
                 </div>
+                
                 <div>
                   <label className="form-label">Featured</label>
                   <label style={{

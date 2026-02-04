@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   Car, MessageSquare, Plus, Edit2, Trash2, 
   X, Check, LayoutDashboard, LogOut, Lock,
-  Upload, Image, Video, Clock
+  Upload, Image, Video, Clock, Package
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -16,6 +16,7 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState(null);
   const [cars, setCars] = useState([]);
+  const [parts, setParts] = useState([]);
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(false);
   
@@ -28,11 +29,20 @@ const AdminDashboard = () => {
     color: '', body_type: '', description: '', features: '',
     images: [], videos: [], status: 'available', featured: false
   });
+
+  // Parts form state
+  const [showPartForm, setShowPartForm] = useState(false);
+  const [editingPart, setEditingPart] = useState(null);
+  const [partForm, setPartForm] = useState({
+    name: '', category: '', description: '', images: [],
+    availability: 'in_stock', featured: false
+  });
   
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef(null);
+  const partFileInputRef = useRef(null);
 
   useEffect(() => {
     const token = localStorage.getItem('adminToken');
@@ -80,13 +90,15 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, carsRes, inquiriesRes] = await Promise.all([
+      const [statsRes, carsRes, partsRes, inquiriesRes] = await Promise.all([
         axios.get('/api/inquiries/stats/dashboard'),
         axios.get('/api/cars'),
+        axios.get('/api/parts'),
         axios.get('/api/inquiries')
       ]);
       setStats(statsRes.data);
       setCars(carsRes.data);
+      setParts(partsRes.data);
       setInquiries(inquiriesRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -98,7 +110,7 @@ const AdminDashboard = () => {
     }
   };
 
-  // FILE UPLOAD HANDLER
+  // CAR FILE UPLOAD HANDLER
   const handleFileUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -146,6 +158,45 @@ const AdminDashboard = () => {
     }
   };
 
+  // PART FILE UPLOAD HANDLER
+  const handlePartFileUpload = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    setUploadProgress(0);
+
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files', files[i]);
+    }
+
+    try {
+      const response = await axios.post('/api/parts/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(progress);
+        }
+      });
+
+      const uploadedFiles = response.data.files;
+      const newImages = [...partForm.images, ...uploadedFiles.map(f => f.url)];
+
+      setPartForm({ ...partForm, images: newImages });
+      alert(`${uploadedFiles.length} image(s) uploaded successfully!`);
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Failed to upload images. Please try again.');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      if (partFileInputRef.current) {
+        partFileInputRef.current.value = '';
+      }
+    }
+  };
+
   const removeMedia = (type, index) => {
     if (type === 'image') {
       const newImages = [...carForm.images];
@@ -158,6 +209,13 @@ const AdminDashboard = () => {
     }
   };
 
+  const removePartImage = (index) => {
+    const newImages = [...partForm.images];
+    newImages.splice(index, 1);
+    setPartForm({ ...partForm, images: newImages });
+  };
+
+  // CAR HANDLERS
   const handleCarSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -220,15 +278,6 @@ const AdminDashboard = () => {
     setShowCarForm(true);
   };
 
-  const handleInquiryStatus = async (id, status) => {
-    try {
-      await axios.put(`/api/inquiries/${id}`, { status });
-      fetchData();
-    } catch (error) {
-      console.error('Error updating inquiry:', error);
-    }
-  };
-
   const resetCarForm = () => {
     setCarForm({
       title: '', brand: '', model: '', year: new Date().getFullYear(),
@@ -236,6 +285,67 @@ const AdminDashboard = () => {
       color: '', body_type: '', description: '', features: '',
       images: [], videos: [], status: 'available', featured: false
     });
+  };
+
+  // PART HANDLERS
+  const handlePartSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = { ...partForm };
+
+      if (editingPart) {
+        await axios.put(`/api/parts/${editingPart.id}`, payload);
+      } else {
+        await axios.post('/api/parts', payload);
+      }
+      
+      setShowPartForm(false);
+      setEditingPart(null);
+      resetPartForm();
+      fetchData();
+    } catch (error) {
+      console.error('Error saving part:', error);
+      alert('Failed to save part');
+    }
+  };
+
+  const handleDeletePart = async (id) => {
+    if (!confirm('Are you sure you want to delete this part?')) return;
+    try {
+      await axios.delete(`/api/parts/${id}`);
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting part:', error);
+    }
+  };
+
+  const handleEditPart = (part) => {
+    setEditingPart(part);
+    setPartForm({
+      name: part.name,
+      category: part.category,
+      description: part.description || '',
+      images: part.images || [],
+      availability: part.availability,
+      featured: part.featured === 1
+    });
+    setShowPartForm(true);
+  };
+
+  const resetPartForm = () => {
+    setPartForm({
+      name: '', category: '', description: '', images: [],
+      availability: 'in_stock', featured: false
+    });
+  };
+
+  const handleInquiryStatus = async (id, status) => {
+    try {
+      await axios.put(`/api/inquiries/${id}`, { status });
+      fetchData();
+    } catch (error) {
+      console.error('Error updating inquiry:', error);
+    }
   };
 
   // LOGIN SCREEN
@@ -393,6 +503,7 @@ const AdminDashboard = () => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'cars', label: 'Manage Cars', icon: Car },
+    { id: 'parts', label: 'Manage Parts', icon: Package },
     { id: 'inquiries', label: 'Inquiries', icon: MessageSquare }
   ];
 
@@ -491,6 +602,7 @@ const AdminDashboard = () => {
 
       {/* Main Content */}
       <main style={{ flex: 1, marginLeft: '280px', padding: '40px' }}>
+        
         {/* Dashboard Tab */}
         {activeTab === 'dashboard' && (
           <div>
@@ -498,7 +610,7 @@ const AdminDashboard = () => {
 
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
               gap: '24px',
               marginBottom: '48px'
             }}>
@@ -507,7 +619,8 @@ const AdminDashboard = () => {
                 { label: 'Available', value: stats?.availableCars || 0, color: '#22c55e' },
                 { label: 'Reserved', value: stats?.reservedCars || 0, color: '#f59e0b' },
                 { label: 'Upcoming', value: cars.filter(c => c.status === 'upcoming').length, color: '#8b5cf6' },
-                { label: 'Inquiries', value: stats?.totalInquiries || 0, color: '#3b82f6' }
+                { label: 'Total Parts', value: parts.length, color: '#3b82f6' },
+                { label: 'Inquiries', value: stats?.totalInquiries || 0, color: '#ec4899' }
               ].map((stat, i) => (
                 <div key={i} style={{
                   background: '#fff',
@@ -523,7 +636,7 @@ const AdminDashboard = () => {
                     color: '#737373',
                     marginBottom: '12px'
                   }}>{stat.label}</p>
-                  <p style={{ fontSize: '3rem', fontWeight: '700', color: stat.color, lineHeight: 1 }}>{stat.value}</p>
+                  <p style={{ fontSize: '2.5rem', fontWeight: '700', color: stat.color, lineHeight: 1 }}>{stat.value}</p>
                 </div>
               ))}
             </div>
@@ -533,12 +646,7 @@ const AdminDashboard = () => {
         {/* Cars Tab */}
         {activeTab === 'cars' && (
           <div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '40px'
-            }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
               <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>Manage Cars</h1>
               <button
                 onClick={() => { setEditingCar(null); resetCarForm(); setShowCarForm(true); }}
@@ -561,12 +669,7 @@ const AdminDashboard = () => {
               </button>
             </div>
 
-            <div style={{
-              background: '#fff',
-              borderRadius: '20px',
-              overflow: 'hidden',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.04)'
-            }}>
+            <div style={{ background: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#fafafa' }}>
@@ -621,24 +724,116 @@ const AdminDashboard = () => {
                       <td style={{ padding: '18px 20px' }}>
                         <div style={{ display: 'flex', gap: '10px' }}>
                           <button onClick={() => handleEditCar(car)} style={{
-                            padding: '10px',
-                            background: '#f5f5f5',
-                            border: 'none',
-                            borderRadius: '10px',
-                            cursor: 'pointer'
+                            padding: '10px', background: '#f5f5f5', border: 'none', borderRadius: '10px', cursor: 'pointer'
                           }}><Edit2 size={18} /></button>
                           <button onClick={() => handleDeleteCar(car.id)} style={{
-                            padding: '10px',
-                            background: '#fef2f2',
-                            border: 'none',
-                            borderRadius: '10px',
-                            cursor: 'pointer',
-                            color: '#dc2626'
+                            padding: '10px', background: '#fef2f2', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#dc2626'
                           }}><Trash2 size={18} /></button>
                         </div>
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Parts Tab */}
+        {activeTab === 'parts' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+              <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>Manage Parts</h1>
+              <button
+                onClick={() => { setEditingPart(null); resetPartForm(); setShowPartForm(true); }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '14px 28px',
+                  background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                <Plus size={20} />
+                Add New Part
+              </button>
+            </div>
+
+            <div style={{ background: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#fafafa' }}>
+                    {['Part', 'Category', 'Availability', 'Featured', 'Actions'].map(h => (
+                      <th key={h} style={{
+                        padding: '18px 20px',
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                        color: '#737373'
+                      }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {parts.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ padding: '60px', textAlign: 'center', color: '#737373' }}>
+                        No parts added yet. Click "Add New Part" to get started.
+                      </td>
+                    </tr>
+                  ) : (
+                    parts.map(part => (
+                      <tr key={part.id} style={{ borderTop: '1px solid #f5f5f5' }}>
+                        <td style={{ padding: '18px 20px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                            <img
+                              src={part.images?.[0] || 'https://via.placeholder.com/60x40'}
+                              alt={part.name}
+                              style={{ width: '70px', height: '50px', objectFit: 'cover', borderRadius: '8px' }}
+                            />
+                            <span style={{ fontWeight: '600' }}>{part.name}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '18px 20px', color: '#525252' }}>{part.category}</td>
+                        <td style={{ padding: '18px 20px' }}>
+                          <span style={{
+                            padding: '6px 14px',
+                            borderRadius: '20px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            background: part.availability === 'in_stock' ? '#dcfce7' : 
+                                       part.availability === 'out_of_stock' ? '#fef2f2' : '#fef3c7',
+                            color: part.availability === 'in_stock' ? '#166534' : 
+                                  part.availability === 'out_of_stock' ? '#dc2626' : '#92400e'
+                          }}>
+                            {part.availability === 'in_stock' ? 'In Stock' : 
+                             part.availability === 'out_of_stock' ? 'Out of Stock' : 'Coming Soon'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '18px 20px' }}>
+                          {part.featured === 1 ? <Check size={20} color="#22c55e" /> : <X size={20} color="#d4d4d4" />}
+                        </td>
+                        <td style={{ padding: '18px 20px' }}>
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => handleEditPart(part)} style={{
+                              padding: '10px', background: '#f5f5f5', border: 'none', borderRadius: '10px', cursor: 'pointer'
+                            }}><Edit2 size={18} /></button>
+                            <button onClick={() => handleDeletePart(part.id)} style={{
+                              padding: '10px', background: '#fef2f2', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#dc2626'
+                            }}><Trash2 size={18} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -703,10 +898,7 @@ const AdminDashboard = () => {
       {showCarForm && (
         <div style={{
           position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+          top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0,0,0,0.7)',
           display: 'flex',
           alignItems: 'center',
@@ -737,58 +929,44 @@ const AdminDashboard = () => {
                 {editingCar ? 'Edit Car' : 'Add New Car'}
               </h2>
               <button onClick={() => setShowCarForm(false)} style={{
-                width: '44px',
-                height: '44px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '1px solid #e5e5e5',
-                borderRadius: '12px',
-                background: '#fff',
-                cursor: 'pointer'
+                width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: '1px solid #e5e5e5', borderRadius: '12px', background: '#fff', cursor: 'pointer'
               }}><X size={22} /></button>
             </div>
 
             <form onSubmit={handleCarSubmit} style={{ padding: '28px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                {/* Basic Info */}
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Title *</label>
                   <input type="text" className="form-input" required value={carForm.title}
                     onChange={(e) => setCarForm({ ...carForm, title: e.target.value })}
                     placeholder="e.g., Toyota Supra MK4 Twin Turbo" />
                 </div>
-                
                 <div>
                   <label className="form-label">Brand *</label>
                   <input type="text" className="form-input" required value={carForm.brand}
                     onChange={(e) => setCarForm({ ...carForm, brand: e.target.value })} placeholder="Toyota" />
                 </div>
-                
                 <div>
                   <label className="form-label">Model *</label>
                   <input type="text" className="form-input" required value={carForm.model}
                     onChange={(e) => setCarForm({ ...carForm, model: e.target.value })} placeholder="Supra MK4" />
                 </div>
-                
                 <div>
                   <label className="form-label">Year *</label>
                   <input type="number" className="form-input" required min="1900" max="2030" value={carForm.year}
                     onChange={(e) => setCarForm({ ...carForm, year: e.target.value })} />
                 </div>
-                
                 <div>
                   <label className="form-label">Mileage</label>
                   <input type="text" className="form-input" value={carForm.mileage}
                     onChange={(e) => setCarForm({ ...carForm, mileage: e.target.value })} placeholder="45,000 km" />
                 </div>
-                
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Engine</label>
                   <input type="text" className="form-input" value={carForm.engine}
                     onChange={(e) => setCarForm({ ...carForm, engine: e.target.value })} placeholder="2JZ-GTE 3.0L Twin Turbo" />
                 </div>
-                
                 <div>
                   <label className="form-label">Transmission</label>
                   <select className="form-input form-select" value={carForm.transmission}
@@ -800,7 +978,6 @@ const AdminDashboard = () => {
                     <option value="CVT">CVT</option>
                   </select>
                 </div>
-                
                 <div>
                   <label className="form-label">Fuel Type</label>
                   <select className="form-input form-select" value={carForm.fuel_type}
@@ -811,13 +988,11 @@ const AdminDashboard = () => {
                     <option value="Electric">Electric</option>
                   </select>
                 </div>
-                
                 <div>
                   <label className="form-label">Color</label>
                   <input type="text" className="form-input" value={carForm.color}
                     onChange={(e) => setCarForm({ ...carForm, color: e.target.value })} placeholder="Super White" />
                 </div>
-                
                 <div>
                   <label className="form-label">Body Type</label>
                   <select className="form-input form-select" value={carForm.body_type}
@@ -827,18 +1002,13 @@ const AdminDashboard = () => {
                     <option value="Coupe">Coupe</option>
                     <option value="SUV">SUV</option>
                     <option value="Hatchback">Hatchback</option>
-                    <option value="Truck">Truck</option>
-                    <option value="Van">Van</option>
                   </select>
                 </div>
-                
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Description</label>
                   <textarea className="form-input form-textarea" value={carForm.description}
-                    onChange={(e) => setCarForm({ ...carForm, description: e.target.value })} rows={3}
-                    placeholder="Describe the vehicle..." />
+                    onChange={(e) => setCarForm({ ...carForm, description: e.target.value })} rows={3} />
                 </div>
-                
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Features (comma separated)</label>
                   <input type="text" className="form-input" value={carForm.features}
@@ -846,194 +1016,73 @@ const AdminDashboard = () => {
                     placeholder="Leather Interior, Sunroof, Navigation" />
                 </div>
 
-                {/* FILE UPLOAD SECTION */}
-                <div style={{ gridColumn: 'span 2', marginTop: '20px' }}>
+                {/* File Upload */}
+                <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Images & Videos</label>
-                  
-                  <div style={{
-                    border: '2px dashed #e5e5e5',
-                    borderRadius: '16px',
-                    padding: '32px',
-                    textAlign: 'center',
-                    background: '#fafafa',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = '#c41e3a'; }}
-                  onDragLeave={(e) => { e.currentTarget.style.borderColor = '#e5e5e5'; }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.currentTarget.style.borderColor = '#e5e5e5';
-                    const files = e.dataTransfer.files;
-                    if (files.length > 0) {
-                      const event = { target: { files } };
-                      handleFileUpload(event);
-                    }
-                  }}
+                  <div
+                    style={{
+                      border: '2px dashed #e5e5e5', borderRadius: '16px', padding: '32px',
+                      textAlign: 'center', background: '#fafafa', cursor: 'pointer'
+                    }}
+                    onClick={() => fileInputRef.current?.click()}
                   >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept="image/*,video/*"
-                      onChange={handleFileUpload}
-                      style={{ display: 'none' }}
-                    />
-                    
+                    <input ref={fileInputRef} type="file" multiple accept="image/*,video/*"
+                      onChange={handleFileUpload} style={{ display: 'none' }} />
                     {uploading ? (
                       <div>
                         <div className="spinner" style={{ margin: '0 auto 16px', width: '40px', height: '40px' }} />
-                        <p style={{ color: '#737373' }}>Uploading... {uploadProgress}%</p>
-                        <div style={{
-                          width: '100%',
-                          height: '8px',
-                          background: '#e5e5e5',
-                          borderRadius: '4px',
-                          marginTop: '12px',
-                          overflow: 'hidden'
-                        }}>
-                          <div style={{
-                            width: `${uploadProgress}%`,
-                            height: '100%',
-                            background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
-                            transition: 'width 0.3s ease'
-                          }} />
-                        </div>
+                        <p>Uploading... {uploadProgress}%</p>
                       </div>
                     ) : (
                       <>
                         <Upload size={40} color="#c41e3a" style={{ marginBottom: '16px' }} />
-                        <p style={{ fontWeight: '600', color: '#0a0a0a', marginBottom: '8px' }}>
-                          Click to upload or drag & drop
-                        </p>
-                        <p style={{ fontSize: '0.85rem', color: '#737373' }}>
-                          Images (JPG, PNG, WebP) & Videos (MP4, WebM, MOV)
-                        </p>
-                        <p style={{ fontSize: '0.75rem', color: '#a3a3a3', marginTop: '8px' }}>
-                          Max 100MB per file
-                        </p>
+                        <p style={{ fontWeight: '600' }}>Click to upload or drag & drop</p>
+                        <p style={{ fontSize: '0.85rem', color: '#737373' }}>Images & Videos (Max 100MB)</p>
                       </>
                     )}
                   </div>
 
-                  {/* Uploaded Images Preview */}
                   {carForm.images.length > 0 && (
                     <div style={{ marginTop: '20px' }}>
-                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Image size={16} /> Images ({carForm.images.length})
+                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px' }}>
+                        <Image size={16} style={{ display: 'inline', marginRight: '8px' }} />
+                        Images ({carForm.images.length})
                       </p>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                         {carForm.images.map((img, index) => (
                           <div key={index} style={{ position: 'relative' }}>
-                            <img src={img} alt={`Upload ${index + 1}`} style={{
-                              width: '100px',
-                              height: '80px',
-                              objectFit: 'cover',
-                              borderRadius: '10px',
-                              border: '2px solid #e5e5e5'
-                            }} />
-                            <button
-                              type="button"
-                              onClick={() => removeMedia('image', index)}
-                              style={{
-                                position: 'absolute',
-                                top: '-8px',
-                                right: '-8px',
-                                width: '24px',
-                                height: '24px',
-                                background: '#dc2626',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: '50%',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}
-                            >
-                              <X size={14} />
-                            </button>
+                            <img src={img} alt="" style={{ width: '100px', height: '80px', objectFit: 'cover', borderRadius: '10px' }} />
+                            <button type="button" onClick={() => removeMedia('image', index)} style={{
+                              position: 'absolute', top: '-8px', right: '-8px', width: '24px', height: '24px',
+                              background: '#dc2626', color: '#fff', border: 'none', borderRadius: '50%', cursor: 'pointer'
+                            }}><X size={14} /></button>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Uploaded Videos Preview */}
                   {carForm.videos.length > 0 && (
                     <div style={{ marginTop: '20px' }}>
-                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Video size={16} /> Videos ({carForm.videos.length})
+                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px' }}>
+                        <Video size={16} style={{ display: 'inline', marginRight: '8px' }} />
+                        Videos ({carForm.videos.length})
                       </p>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                         {carForm.videos.map((vid, index) => (
                           <div key={index} style={{ position: 'relative' }}>
-                            <video src={vid} style={{
-                              width: '120px',
-                              height: '80px',
-                              objectFit: 'cover',
-                              borderRadius: '10px',
-                              border: '2px solid #e5e5e5'
-                            }} />
-                            <button
-                              type="button"
-                              onClick={() => removeMedia('video', index)}
-                              style={{
-                                position: 'absolute',
-                                top: '-8px',
-                                right: '-8px',
-                                width: '24px',
-                                height: '24px',
-                                background: '#dc2626',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: '50%',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}
-                            >
-                              <X size={14} />
-                            </button>
+                            <video src={vid} style={{ width: '120px', height: '80px', objectFit: 'cover', borderRadius: '10px' }} />
+                            <button type="button" onClick={() => removeMedia('video', index)} style={{
+                              position: 'absolute', top: '-8px', right: '-8px', width: '24px', height: '24px',
+                              background: '#dc2626', color: '#fff', border: 'none', borderRadius: '50%', cursor: 'pointer'
+                            }}><X size={14} /></button>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-
-                  {/* OR Enter URLs Manually */}
-                  <div style={{ marginTop: '20px' }}>
-                    <p style={{ fontSize: '0.8rem', color: '#737373', marginBottom: '8px' }}>
-                      Or enter image URLs manually (comma separated):
-                    </p>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="https://example.com/image1.jpg, https://example.com/image2.jpg"
-                      onChange={(e) => {
-                        const urls = e.target.value.split(',').map(u => u.trim()).filter(u => u);
-                        if (urls.length > 0) {
-                          setCarForm({ ...carForm, images: [...carForm.images, ...urls] });
-                          e.target.value = '';
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const urls = e.target.value.split(',').map(u => u.trim()).filter(u => u);
-                          if (urls.length > 0) {
-                            setCarForm({ ...carForm, images: [...carForm.images, ...urls] });
-                            e.target.value = '';
-                          }
-                        }
-                      }}
-                    />
-                  </div>
                 </div>
 
-                {/* Status & Featured */}
                 <div>
                   <label className="form-label">Status</label>
                   <select className="form-input form-select" value={carForm.status}
@@ -1044,18 +1093,9 @@ const AdminDashboard = () => {
                     <option value="upcoming">Upcoming</option>
                   </select>
                 </div>
-                
                 <div>
                   <label className="form-label">Featured</label>
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '16px',
-                    border: '2px solid #e5e5e5',
-                    borderRadius: '12px',
-                    cursor: 'pointer'
-                  }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', border: '2px solid #e5e5e5', borderRadius: '12px', cursor: 'pointer' }}>
                     <input type="checkbox" checked={carForm.featured}
                       onChange={(e) => setCarForm({ ...carForm, featured: e.target.checked })}
                       style={{ width: '20px', height: '20px' }} />
@@ -1065,13 +1105,165 @@ const AdminDashboard = () => {
               </div>
 
               <div style={{ display: 'flex', gap: '16px', marginTop: '32px' }}>
-                <button type="button" onClick={() => setShowCarForm(false)}
-                  className="btn btn-secondary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
+                <button type="button" onClick={() => setShowCarForm(false)} className="btn btn-secondary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary"
-                  style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
                   {editingCar ? 'Update Car' : 'Add Car'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Part Form Modal */}
+      {showPartForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#fff',
+            width: '100%',
+            maxWidth: '600px',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            borderRadius: '24px'
+          }}>
+            <div style={{
+              padding: '28px',
+              borderBottom: '1px solid #f0f0f0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              position: 'sticky',
+              top: 0,
+              background: '#fff',
+              zIndex: 10
+            }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: '700' }}>
+                {editingPart ? 'Edit Part' : 'Add New Part'}
+              </h2>
+              <button onClick={() => setShowPartForm(false)} style={{
+                width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: '1px solid #e5e5e5', borderRadius: '12px', background: '#fff', cursor: 'pointer'
+              }}><X size={22} /></button>
+            </div>
+
+            <form onSubmit={handlePartSubmit} style={{ padding: '28px' }}>
+              <div style={{ display: 'grid', gap: '20px' }}>
+                <div>
+                  <label className="form-label">Part Name *</label>
+                  <input type="text" className="form-input" required value={partForm.name}
+                    onChange={(e) => setPartForm({ ...partForm, name: e.target.value })}
+                    placeholder="e.g., 2JZ-GTE Twin Turbo Engine" />
+                </div>
+                
+                <div>
+                  <label className="form-label">Category *</label>
+                  <select className="form-input form-select" required value={partForm.category}
+                    onChange={(e) => setPartForm({ ...partForm, category: e.target.value })}>
+                    <option value="">Select Category</option>
+                    <option value="Engine Parts">Engine Parts</option>
+                    <option value="Body Parts">Body Parts</option>
+                    <option value="Accessories">Accessories</option>
+                    <option value="Interior">Interior</option>
+                    <option value="Exterior">Exterior</option>
+                    <option value="Suspension">Suspension</option>
+                    <option value="Brakes">Brakes</option>
+                    <option value="Exhaust">Exhaust</option>
+                    <option value="Electrical">Electrical</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label">Description</label>
+                  <textarea className="form-input form-textarea" value={partForm.description}
+                    onChange={(e) => setPartForm({ ...partForm, description: e.target.value })} rows={4}
+                    placeholder="Describe the part, condition, compatibility..." />
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="form-label">Images</label>
+                  <div
+                    style={{
+                      border: '2px dashed #e5e5e5', borderRadius: '16px', padding: '32px',
+                      textAlign: 'center', background: '#fafafa', cursor: 'pointer'
+                    }}
+                    onClick={() => partFileInputRef.current?.click()}
+                  >
+                    <input ref={partFileInputRef} type="file" multiple accept="image/*"
+                      onChange={handlePartFileUpload} style={{ display: 'none' }} />
+                    {uploading ? (
+                      <div>
+                        <div className="spinner" style={{ margin: '0 auto 16px', width: '40px', height: '40px' }} />
+                        <p>Uploading... {uploadProgress}%</p>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload size={40} color="#c41e3a" style={{ marginBottom: '16px' }} />
+                        <p style={{ fontWeight: '600' }}>Click to upload images</p>
+                        <p style={{ fontSize: '0.85rem', color: '#737373' }}>JPG, PNG, WebP (Max 10MB)</p>
+                      </>
+                    )}
+                  </div>
+
+                  {partForm.images.length > 0 && (
+                    <div style={{ marginTop: '20px' }}>
+                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px' }}>
+                        Images ({partForm.images.length})
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                        {partForm.images.map((img, index) => (
+                          <div key={index} style={{ position: 'relative' }}>
+                            <img src={img} alt="" style={{ width: '100px', height: '80px', objectFit: 'cover', borderRadius: '10px' }} />
+                            <button type="button" onClick={() => removePartImage(index)} style={{
+                              position: 'absolute', top: '-8px', right: '-8px', width: '24px', height: '24px',
+                              background: '#dc2626', color: '#fff', border: 'none', borderRadius: '50%', cursor: 'pointer'
+                            }}><X size={14} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="form-label">Availability</label>
+                  <select className="form-input form-select" value={partForm.availability}
+                    onChange={(e) => setPartForm({ ...partForm, availability: e.target.value })}>
+                    <option value="in_stock">In Stock</option>
+                    <option value="out_of_stock">Out of Stock</option>
+                    <option value="coming_soon">Coming Soon</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label">Featured</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', border: '2px solid #e5e5e5', borderRadius: '12px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={partForm.featured}
+                      onChange={(e) => setPartForm({ ...partForm, featured: e.target.checked })}
+                      style={{ width: '20px', height: '20px' }} />
+                    <span>Show as featured part</span>
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '16px', marginTop: '32px' }}>
+                <button type="button" onClick={() => setShowPartForm(false)} className="btn btn-secondary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
+                  {editingPart ? 'Update Part' : 'Add Part'}
                 </button>
               </div>
             </form>
