@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+
+# Database
+*.sqlite
+database.sqlite
+
+# Logs
+*.log
+
+# Build
+dist/
+build/
+
+# OS files
+.DS_Store
+
+# Uploads (we'll use cloud storage later)
+backend/uploads/
