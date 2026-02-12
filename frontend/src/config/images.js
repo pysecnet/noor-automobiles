@@ -6,7 +6,7 @@
 const IMAGES = {
   // LOGO - Replace with your custom logo
   // Put your logo in: frontend/public/images/logo.png
-  logo: '/images/logo.jpg',
+  logo: '/images/logo.png',
   
   // HERO SECTION BACKGROUND
   // Put image in: frontend/public/images/hero-bg.jpg

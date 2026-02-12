@@ -1,18 +1,71 @@
 import { Link } from 'react-router-dom';
 import { Calendar, Gauge, Fuel, Settings, ArrowRight } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 
 const CarCard = ({ car, index = 0 }) => {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [isInView, setIsInView] = useState(false);
+  const cardRef = useRef(null);
+
   const statusColors = {
     available: { bg: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)', text: '#166534' },
     reserved: { bg: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', text: '#92400e' },
-    sold: { bg: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)', text: '#374151' }
+    sold: { bg: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)', text: '#374151' },
+    upcoming: { bg: 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)', text: '#7c3aed' }
   };
 
   const status = statusColors[car.status] || statusColors.available;
 
+  // Intersection Observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '100px', threshold: 0.1 }
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  const getOptimizedImage = (url, width = 600) => {
+    if (!url) return {
+      placeholder: 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=20&q=10',
+      full: 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=600&q=80'
+    };
+    
+    if (url.includes('cloudinary.com')) {
+      return {
+        placeholder: url.replace('/upload/', '/upload/w_20,q_10,e_blur:1000/'),
+        full: url.replace('/upload/', `/upload/w_${width},h_400,c_fill,q_auto,f_auto/`)
+      };
+    }
+    
+    if (url.includes('unsplash.com')) {
+      const base = url.split('?')[0];
+      return {
+        placeholder: `${base}?w=20&q=10`,
+        full: `${base}?w=${width}&h=400&fit=crop&q=80&auto=format`
+      };
+    }
+    
+    return { placeholder: url, full: url };
+  };
+
+  const { placeholder, full } = getOptimizedImage(car.images?.[0]);
+
   return (
     <Link
-      to={`/car/${car.id}`}
+      ref={cardRef}
+      to={'/car/' + car.id}
       style={{
         display: 'block',
         background: '#fff',
@@ -31,32 +84,93 @@ const CarCard = ({ car, index = 0 }) => {
         e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.06)';
       }}
     >
-      {/* Image Container - LARGER */}
       <div style={{
         position: 'relative',
-        height: '320px',
+        height: '280px',
         overflow: 'hidden',
-        background: 'linear-gradient(135deg, #f5f5f5 0%, #e5e5e5 100%)'
+        background: '#f0f0f0'
       }}>
-        <img
-          src={car.images?.[0] || 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=800&q=80'}
-          alt={car.title}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            transition: 'transform 0.7s ease'
-          }}
-          onMouseEnter={e => e.target.style.transform = 'scale(1.1)'}
-          onMouseLeave={e => e.target.style.transform = 'scale(1)'}
-        />
+        {/* Blur Placeholder */}
+        {!imageLoaded && !imageError && isInView && (
+          <img
+            src={placeholder}
+            alt=""
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              filter: 'blur(20px)',
+              transform: 'scale(1.1)'
+            }}
+          />
+        )}
+
+        {/* Loading Spinner */}
+        {!imageLoaded && !imageError && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 3
+          }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              border: '3px solid #e5e5e5',
+              borderTopColor: '#c41e3a',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite'
+            }} />
+          </div>
+        )}
+
+        {imageError && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#f5f5f5',
+            color: '#999',
+            fontSize: '0.9rem'
+          }}>
+            No Image Available
+          </div>
+        )}
+
+        {isInView && (
+          <img
+            src={full}
+            alt={car.title}
+            loading="lazy"
+            onLoad={() => setImageLoaded(true)}
+            onError={() => setImageError(true)}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              transition: 'transform 0.7s ease, opacity 0.5s ease',
+              opacity: imageLoaded ? 1 : 0
+            }}
+            onMouseEnter={e => e.target.style.transform = 'scale(1.1)'}
+            onMouseLeave={e => e.target.style.transform = 'scale(1)'}
+          />
+        )}
         
-        {/* Status Badge */}
         <div style={{
           position: 'absolute',
-          top: '20px',
-          left: '20px',
-          padding: '8px 18px',
+          top: '16px',
+          left: '16px',
+          padding: '8px 16px',
           background: status.bg,
           color: status.text,
           fontSize: '0.7rem',
@@ -64,18 +178,18 @@ const CarCard = ({ car, index = 0 }) => {
           letterSpacing: '0.08em',
           textTransform: 'uppercase',
           borderRadius: '50px',
-          boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+          boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+          zIndex: 2
         }}>
           {car.status}
         </div>
 
-        {/* Featured Badge */}
         {car.featured === 1 && (
           <div style={{
             position: 'absolute',
-            top: '20px',
-            right: '20px',
-            padding: '8px 18px',
+            top: '16px',
+            right: '16px',
+            padding: '8px 16px',
             background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
             color: '#fff',
             fontSize: '0.7rem',
@@ -83,34 +197,35 @@ const CarCard = ({ car, index = 0 }) => {
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
             borderRadius: '50px',
-            boxShadow: '0 4px 15px rgba(196,30,58,0.4)'
+            boxShadow: '0 4px 15px rgba(196,30,58,0.4)',
+            zIndex: 2
           }}>
             ★ Featured
           </div>
         )}
 
-        {/* Bottom Gradient */}
         <div style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          height: '150px',
+          height: '120px',
           background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)',
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          zIndex: 1
         }} />
 
-        {/* Price Tag */}
         <div style={{
           position: 'absolute',
-          bottom: '20px',
-          left: '20px',
-          color: '#fff'
+          bottom: '16px',
+          left: '16px',
+          color: '#fff',
+          zIndex: 2
         }}>
           <span style={{
-            fontSize: '0.7rem',
-            fontWeight: '500',
-            opacity: 0.9,
+            fontSize: '0.75rem',
+            fontWeight: '600',
+            opacity: 0.95,
             letterSpacing: '0.05em',
             textTransform: 'uppercase'
           }}>
@@ -119,11 +234,9 @@ const CarCard = ({ car, index = 0 }) => {
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{ padding: '28px' }}>
-        {/* Title */}
+      <div style={{ padding: '24px' }}>
         <h3 style={{
-          fontSize: '1.3rem',
+          fontSize: '1.2rem',
           fontWeight: '700',
           color: '#0a0a0a',
           marginBottom: '16px',
@@ -132,17 +245,16 @@ const CarCard = ({ car, index = 0 }) => {
           {car.title}
         </h3>
 
-        {/* Specs Grid */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: '14px',
-          paddingTop: '20px',
+          gap: '12px',
+          paddingTop: '16px',
           borderTop: '1px solid #f0f0f0'
         }}>
           {[
             { icon: Gauge, label: car.mileage || 'N/A' },
-            { icon: Settings, label: car.transmission || 'N/A' },
+            { icon: Settings, label: car.transmission || 'Auto' },
             { icon: Fuel, label: car.fuel_type || 'Petrol' },
             { icon: Calendar, label: car.year }
           ].map((spec, i) => (
@@ -152,20 +264,24 @@ const CarCard = ({ car, index = 0 }) => {
               gap: '10px'
             }}>
               <div style={{
-                width: '36px',
-                height: '36px',
+                width: '34px',
+                height: '34px',
                 background: 'linear-gradient(135deg, #fff5f5 0%, #ffe5e8 100%)',
                 borderRadius: '10px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                flexShrink: 0
               }}>
-                <spec.icon size={16} color="#c41e3a" />
+                <spec.icon size={15} color="#c41e3a" />
               </div>
               <span style={{
-                fontSize: '0.85rem',
+                fontSize: '0.8rem',
                 color: '#525252',
-                fontWeight: '500'
+                fontWeight: '500',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
               }}>
                 {spec.label}
               </span>
@@ -173,10 +289,9 @@ const CarCard = ({ car, index = 0 }) => {
           ))}
         </div>
 
-        {/* CTA */}
         <div style={{
-          marginTop: '24px',
-          paddingTop: '20px',
+          marginTop: '20px',
+          paddingTop: '16px',
           borderTop: '1px solid #f0f0f0',
           display: 'flex',
           justifyContent: 'space-between',
@@ -190,8 +305,8 @@ const CarCard = ({ car, index = 0 }) => {
             View Details
           </span>
           <div style={{
-            width: '40px',
-            height: '40px',
+            width: '38px',
+            height: '38px',
             background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
             borderRadius: '50%',
             display: 'flex',
@@ -199,10 +314,26 @@ const CarCard = ({ car, index = 0 }) => {
             justifyContent: 'center',
             transition: 'transform 0.3s ease'
           }}>
-            <ArrowRight size={18} color="#fff" />
+            <ArrowRight size={16} color="#fff" />
           </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes spin {
+          to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </Link>
   );
 };

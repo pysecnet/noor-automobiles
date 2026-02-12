@@ -3,11 +3,10 @@ import axios from 'axios';
 import { 
   Car, MessageSquare, Plus, Edit2, Trash2, 
   X, Check, LayoutDashboard, LogOut, Lock,
-  Upload, Image, Video, Clock, Package
+  Upload, Clock, Package, ChevronUp, ChevronDown, Menu
 } from 'lucide-react';
 
 const AdminDashboard = () => {
-  // Auth state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -19,8 +18,8 @@ const AdminDashboard = () => {
   const [parts, setParts] = useState([]);
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
-  // Car form state
   const [showCarForm, setShowCarForm] = useState(false);
   const [editingCar, setEditingCar] = useState(null);
   const [carForm, setCarForm] = useState({
@@ -30,7 +29,6 @@ const AdminDashboard = () => {
     images: [], videos: [], status: 'available', featured: false
   });
 
-  // Parts form state
   const [showPartForm, setShowPartForm] = useState(false);
   const [editingPart, setEditingPart] = useState(null);
   const [partForm, setPartForm] = useState({
@@ -38,7 +36,6 @@ const AdminDashboard = () => {
     availability: 'in_stock', featured: false
   });
   
-  // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef(null);
@@ -110,7 +107,35 @@ const AdminDashboard = () => {
     }
   };
 
-  // CAR FILE UPLOAD HANDLER
+  // REORDER FUNCTIONS
+  const moveCarUp = async (index) => {
+    if (index === 0) return;
+    const newCars = [...cars];
+    [newCars[index - 1], newCars[index]] = [newCars[index], newCars[index - 1]];
+    setCars(newCars);
+    
+    try {
+      await axios.put('/api/cars/reorder', { carIds: newCars.map(c => c.id) });
+    } catch (error) {
+      console.error('Error reordering:', error);
+      fetchData();
+    }
+  };
+
+  const moveCarDown = async (index) => {
+    if (index === cars.length - 1) return;
+    const newCars = [...cars];
+    [newCars[index], newCars[index + 1]] = [newCars[index + 1], newCars[index]];
+    setCars(newCars);
+    
+    try {
+      await axios.put('/api/cars/reorder', { carIds: newCars.map(c => c.id) });
+    } catch (error) {
+      console.error('Error reordering:', error);
+      fetchData();
+    }
+  };
+
   const handleFileUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -145,27 +170,22 @@ const AdminDashboard = () => {
       });
 
       setCarForm({ ...carForm, images: newImages, videos: newVideos });
-      alert(`${uploadedFiles.length} file(s) uploaded successfully!`);
+      alert('Files uploaded!');
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Failed to upload files. Please try again.');
+      alert('Upload failed');
     } finally {
       setUploading(false);
       setUploadProgress(0);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // PART FILE UPLOAD HANDLER
   const handlePartFileUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setUploading(true);
-    setUploadProgress(0);
-
     const formData = new FormData();
     for (let i = 0; i < files.length; i++) {
       formData.append('files', files[i]);
@@ -173,27 +193,15 @@ const AdminDashboard = () => {
 
     try {
       const response = await axios.post('/api/parts/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(progress);
-        }
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
-
-      const uploadedFiles = response.data.files;
-      const newImages = [...partForm.images, ...uploadedFiles.map(f => f.url)];
-
+      const newImages = [...partForm.images, ...response.data.files.map(f => f.url)];
       setPartForm({ ...partForm, images: newImages });
-      alert(`${uploadedFiles.length} image(s) uploaded successfully!`);
     } catch (error) {
-      console.error('Upload error:', error);
-      alert('Failed to upload images. Please try again.');
+      alert('Upload failed');
     } finally {
       setUploading(false);
-      setUploadProgress(0);
-      if (partFileInputRef.current) {
-        partFileInputRef.current.value = '';
-      }
+      if (partFileInputRef.current) partFileInputRef.current.value = '';
     }
   };
 
@@ -215,7 +223,6 @@ const AdminDashboard = () => {
     setPartForm({ ...partForm, images: newImages });
   };
 
-  // CAR HANDLERS
   const handleCarSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -224,9 +231,7 @@ const AdminDashboard = () => {
         year: parseInt(carForm.year),
         features: typeof carForm.features === 'string' 
           ? carForm.features.split(',').map(f => f.trim()).filter(f => f)
-          : carForm.features,
-        images: carForm.images,
-        videos: carForm.videos
+          : carForm.features
       };
 
       if (editingCar) {
@@ -240,18 +245,17 @@ const AdminDashboard = () => {
       resetCarForm();
       fetchData();
     } catch (error) {
-      console.error('Error saving car:', error);
       alert('Failed to save car');
     }
   };
 
   const handleDeleteCar = async (id) => {
-    if (!confirm('Are you sure you want to delete this car?')) return;
+    if (!confirm('Delete this car?')) return;
     try {
       await axios.delete(`/api/cars/${id}`);
       fetchData();
     } catch (error) {
-      console.error('Error deleting car:', error);
+      console.error('Error:', error);
     }
   };
 
@@ -287,35 +291,30 @@ const AdminDashboard = () => {
     });
   };
 
-  // PART HANDLERS
   const handlePartSubmit = async (e) => {
     e.preventDefault();
     try {
-      const payload = { ...partForm };
-
       if (editingPart) {
-        await axios.put(`/api/parts/${editingPart.id}`, payload);
+        await axios.put(`/api/parts/${editingPart.id}`, partForm);
       } else {
-        await axios.post('/api/parts', payload);
+        await axios.post('/api/parts', partForm);
       }
-      
       setShowPartForm(false);
       setEditingPart(null);
       resetPartForm();
       fetchData();
     } catch (error) {
-      console.error('Error saving part:', error);
       alert('Failed to save part');
     }
   };
 
   const handleDeletePart = async (id) => {
-    if (!confirm('Are you sure you want to delete this part?')) return;
+    if (!confirm('Delete this part?')) return;
     try {
       await axios.delete(`/api/parts/${id}`);
       fetchData();
     } catch (error) {
-      console.error('Error deleting part:', error);
+      console.error('Error:', error);
     }
   };
 
@@ -344,7 +343,7 @@ const AdminDashboard = () => {
       await axios.put(`/api/inquiries/${id}`, { status });
       fetchData();
     } catch (error) {
-      console.error('Error updating inquiry:', error);
+      console.error('Error:', error);
     }
   };
 
@@ -361,41 +360,39 @@ const AdminDashboard = () => {
       }}>
         <div style={{
           background: '#fff',
-          padding: '48px',
-          borderRadius: '24px',
+          padding: '40px',
+          borderRadius: '20px',
           width: '100%',
-          maxWidth: '420px',
-          boxShadow: '0 25px 80px rgba(0,0,0,0.3)'
+          maxWidth: '400px'
         }}>
           <div style={{
-            width: '70px',
-            height: '70px',
+            width: '60px',
+            height: '60px',
             background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
-            borderRadius: '20px',
+            borderRadius: '16px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 28px',
-            boxShadow: '0 10px 30px rgba(196,30,58,0.3)'
+            margin: '0 auto 24px'
           }}>
-            <Lock size={32} color="#fff" />
+            <Lock size={28} color="#fff" />
           </div>
           
-          <h1 style={{ fontSize: '1.8rem', fontWeight: '700', textAlign: 'center', marginBottom: '8px' }}>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: '700', textAlign: 'center', marginBottom: '8px' }}>
             Admin Panel
           </h1>
-          <p style={{ textAlign: 'center', color: '#737373', marginBottom: '32px' }}>
-            Sign in to manage your inventory
+          <p style={{ textAlign: 'center', color: '#737373', marginBottom: '28px', fontSize: '0.9rem' }}>
+            Sign in to manage inventory
           </p>
 
           {loginError && (
             <div style={{
-              padding: '14px 18px',
+              padding: '12px',
               background: '#fef2f2',
               color: '#dc2626',
-              borderRadius: '12px',
-              marginBottom: '24px',
-              fontSize: '0.9rem',
+              borderRadius: '10px',
+              marginBottom: '20px',
+              fontSize: '0.85rem',
               textAlign: 'center'
             }}>
               {loginError}
@@ -403,55 +400,27 @@ const AdminDashboard = () => {
           )}
 
           <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '0.8rem',
-                fontWeight: '600',
-                color: '#737373',
-                marginBottom: '8px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-              }}>Email</label>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '6px' }}>Email</label>
               <input
                 type="email"
                 required
                 value={loginForm.email}
                 onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
                 placeholder="admin@noor.com"
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  border: '2px solid #e5e5e5',
-                  borderRadius: '12px',
-                  fontSize: '1rem'
-                }}
+                style={{ width: '100%', padding: '14px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }}
               />
             </div>
             
-            <div style={{ marginBottom: '28px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '0.8rem',
-                fontWeight: '600',
-                color: '#737373',
-                marginBottom: '8px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-              }}>Password</label>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '6px' }}>Password</label>
               <input
                 type="password"
                 required
                 value={loginForm.password}
                 onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                 placeholder="••••••••"
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  border: '2px solid #e5e5e5',
-                  borderRadius: '12px',
-                  fontSize: '1rem'
-                }}
+                style={{ width: '100%', padding: '14px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }}
               />
             </div>
 
@@ -460,11 +429,11 @@ const AdminDashboard = () => {
               disabled={loginLoading}
               style={{
                 width: '100%',
-                padding: '18px',
+                padding: '16px',
                 background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
                 color: '#fff',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 fontSize: '1rem',
                 fontWeight: '600',
                 cursor: loginLoading ? 'not-allowed' : 'pointer',
@@ -474,19 +443,6 @@ const AdminDashboard = () => {
               {loginLoading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
-
-          <div style={{
-            marginTop: '32px',
-            padding: '20px',
-            background: '#fafafa',
-            borderRadius: '12px',
-            textAlign: 'center'
-          }}>
-            <p style={{ fontSize: '0.75rem', color: '#737373', marginBottom: '8px' }}>Default Credentials</p>
-            <p style={{ fontSize: '0.9rem', color: '#525252' }}>
-              <strong>admin@noor.com</strong> / <strong>admin123</strong>
-            </p>
-          </div>
         </div>
       </div>
     );
@@ -500,143 +456,136 @@ const AdminDashboard = () => {
     );
   }
 
-  const navItems = [
+  const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'cars', label: 'Manage Cars', icon: Car },
-    { id: 'parts', label: 'Manage Parts', icon: Package },
+    { id: 'cars', label: 'Cars', icon: Car },
+    { id: 'parts', label: 'Parts', icon: Package },
     { id: 'inquiries', label: 'Inquiries', icon: MessageSquare }
   ];
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f8f8f8' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f5f5' }}>
+      {/* Mobile Header */}
+      <div className="mobile-admin-header">
+        <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+          padding: '10px',
+          background: '#fff',
+          border: '1px solid #e5e5e5',
+          borderRadius: '10px',
+          cursor: 'pointer'
+        }}>
+          <Menu size={24} />
+        </button>
+        <h1 style={{ fontSize: '1.1rem', fontWeight: '700' }}>Admin Panel</h1>
+        <button onClick={handleLogout} style={{
+          padding: '10px',
+          background: '#fef2f2',
+          border: 'none',
+          borderRadius: '10px',
+          cursor: 'pointer',
+          color: '#dc2626'
+        }}>
+          <LogOut size={20} />
+        </button>
+      </div>
+
+      {/* Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 998
+          }}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside style={{
-        width: '280px',
-        background: 'linear-gradient(180deg, #0a0a0a 0%, #1a1a2e 100%)',
-        color: '#fff',
-        padding: '32px 0',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        bottom: 0,
-        overflowY: 'auto'
-      }}>
-        <div style={{ padding: '0 28px', marginBottom: '48px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
-              borderRadius: '14px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.4rem',
-              fontWeight: '700'
-            }}>N</div>
-            <div>
-              <div style={{ fontWeight: '700', fontSize: '1.1rem' }}>Noor Automobiles</div>
-              <div style={{ fontSize: '0.7rem', opacity: 0.6, letterSpacing: '0.1em' }}>ADMIN PANEL</div>
-            </div>
-          </div>
+      <aside className={`admin-sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div style={{ padding: '28px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#fff' }}>
+            Noor <span style={{ color: '#c41e3a' }}>Admin</span>
+          </h2>
         </div>
 
-        <nav>
-          {navItems.map(item => (
+        <nav style={{ padding: '20px', flex: 1 }}>
+          {tabs.map(tab => (
             <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id); setSidebarOpen(false); }}
               style={{
+                width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '14px',
-                width: '100%',
-                padding: '16px 28px',
-                background: activeTab === item.id ? 'rgba(196,30,58,0.2)' : 'transparent',
+                gap: '12px',
+                padding: '14px 18px',
+                background: activeTab === tab.id ? 'rgba(196,30,58,0.2)' : 'transparent',
                 border: 'none',
-                borderLeft: activeTab === item.id ? '4px solid #c41e3a' : '4px solid transparent',
-                color: activeTab === item.id ? '#fff' : 'rgba(255,255,255,0.6)',
+                borderRadius: '12px',
+                color: activeTab === tab.id ? '#fff' : 'rgba(255,255,255,0.6)',
                 fontSize: '0.95rem',
                 fontWeight: '500',
                 cursor: 'pointer',
+                marginBottom: '8px',
                 textAlign: 'left'
               }}
             >
-              <item.icon size={20} />
-              {item.label}
+              <tab.icon size={20} />
+              {tab.label}
             </button>
           ))}
         </nav>
 
-        <div style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          padding: '28px',
-          borderTop: '1px solid rgba(255,255,255,0.1)'
-        }}>
+        <div style={{ padding: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
           <button
             onClick={handleLogout}
             style={{
+              width: '100%',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              width: '100%',
-              padding: '14px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              gap: '12px',
+              padding: '14px 18px',
+              background: 'rgba(220,38,38,0.1)',
+              border: 'none',
               borderRadius: '12px',
-              color: 'rgba(255,255,255,0.8)',
-              fontSize: '0.9rem',
+              color: '#f87171',
+              fontSize: '0.95rem',
               fontWeight: '500',
               cursor: 'pointer'
             }}
           >
-            <LogOut size={18} />
-            Sign Out
+            <LogOut size={20} />
+            Logout
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main style={{ flex: 1, marginLeft: '280px', padding: '40px' }}>
-        
+      <main className="admin-main">
         {/* Dashboard Tab */}
         {activeTab === 'dashboard' && (
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '40px' }}>Dashboard Overview</h1>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: '24px',
-              marginBottom: '48px'
-            }}>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '30px' }}>Dashboard</h1>
+            <div className="stats-grid">
               {[
                 { label: 'Total Cars', value: stats?.totalCars || 0, color: '#c41e3a' },
                 { label: 'Available', value: stats?.availableCars || 0, color: '#22c55e' },
                 { label: 'Reserved', value: stats?.reservedCars || 0, color: '#f59e0b' },
-                { label: 'Upcoming', value: cars.filter(c => c.status === 'upcoming').length, color: '#8b5cf6' },
-                { label: 'Total Parts', value: parts.length, color: '#3b82f6' },
-                { label: 'Inquiries', value: stats?.totalInquiries || 0, color: '#ec4899' }
+                { label: 'Inquiries', value: stats?.totalInquiries || 0, color: '#3b82f6' }
               ].map((stat, i) => (
                 <div key={i} style={{
                   background: '#fff',
-                  padding: '28px',
-                  borderRadius: '20px',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.04)'
+                  padding: '24px',
+                  borderRadius: '16px',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.04)'
                 }}>
-                  <p style={{
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                    color: '#737373',
-                    marginBottom: '12px'
-                  }}>{stat.label}</p>
-                  <p style={{ fontSize: '2.5rem', fontWeight: '700', color: stat.color, lineHeight: 1 }}>{stat.value}</p>
+                  <p style={{ fontSize: '0.75rem', fontWeight: '600', color: '#737373', marginBottom: '8px', textTransform: 'uppercase' }}>{stat.label}</p>
+                  <p style={{ fontSize: '2rem', fontWeight: '700', color: stat.color }}>{stat.value}</p>
                 </div>
               ))}
             </div>
@@ -646,89 +595,183 @@ const AdminDashboard = () => {
         {/* Cars Tab */}
         {activeTab === 'cars' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-              <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>Manage Cars</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+              <h1 style={{ fontSize: '1.5rem', fontWeight: '700' }}>Manage Cars</h1>
               <button
                 onClick={() => { setEditingCar(null); resetCarForm(); setShowCarForm(true); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '10px',
-                  padding: '14px 28px',
+                  gap: '8px',
+                  padding: '12px 20px',
                   background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
                   color: '#fff',
                   border: 'none',
-                  borderRadius: '12px',
+                  borderRadius: '10px',
                   fontSize: '0.9rem',
                   fontWeight: '600',
                   cursor: 'pointer'
                 }}
               >
-                <Plus size={20} />
-                Add New Car
+                <Plus size={18} />
+                Add Car
               </button>
             </div>
 
-            <div style={{ background: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', overflow: 'hidden' }}>
+              {/* Mobile Card View */}
+              <div className="cars-list-mobile">
+                {cars.map((car, index) => (
+                  <div key={car.id} style={{
+                    padding: '16px',
+                    borderBottom: '1px solid #f0f0f0',
+                    display: 'flex',
+                    gap: '12px',
+                    alignItems: 'center'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <button
+                        onClick={() => moveCarUp(index)}
+                        disabled={index === 0}
+                        style={{
+                          padding: '6px',
+                          background: index === 0 ? '#f5f5f5' : '#e5e5e5',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: index === 0 ? 'not-allowed' : 'pointer',
+                          opacity: index === 0 ? 0.4 : 1
+                        }}
+                      >
+                        <ChevronUp size={16} />
+                      </button>
+                      <button
+                        onClick={() => moveCarDown(index)}
+                        disabled={index === cars.length - 1}
+                        style={{
+                          padding: '6px',
+                          background: index === cars.length - 1 ? '#f5f5f5' : '#e5e5e5',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: index === cars.length - 1 ? 'not-allowed' : 'pointer',
+                          opacity: index === cars.length - 1 ? 0.4 : 1
+                        }}
+                      >
+                        <ChevronDown size={16} />
+                      </button>
+                    </div>
+                    <img
+                      src={car.images?.[0] || 'https://via.placeholder.com/80x60'}
+                      alt={car.title}
+                      style={{ width: '80px', height: '60px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: '600', fontSize: '0.9rem', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{car.title}</p>
+                      <p style={{ fontSize: '0.8rem', color: '#737373' }}>{car.brand} • {car.year}</p>
+                      <span style={{
+                        display: 'inline-block',
+                        marginTop: '4px',
+                        padding: '3px 10px',
+                        borderRadius: '20px',
+                        fontSize: '0.7rem',
+                        fontWeight: '600',
+                        background: car.status === 'available' ? '#dcfce7' : car.status === 'reserved' ? '#fef3c7' : '#f3f4f6',
+                        color: car.status === 'available' ? '#166534' : car.status === 'reserved' ? '#92400e' : '#374151'
+                      }}>
+                        {car.status}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => handleEditCar(car)} style={{
+                        padding: '8px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: 'pointer'
+                      }}><Edit2 size={16} /></button>
+                      <button onClick={() => handleDeleteCar(car.id)} style={{
+                        padding: '8px', background: '#fef2f2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#dc2626'
+                      }}><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop Table View */}
+              <table className="cars-table-desktop">
                 <thead>
                   <tr style={{ background: '#fafafa' }}>
-                    {['Vehicle', 'Brand', 'Year', 'Status', 'Featured', 'Actions'].map(h => (
-                      <th key={h} style={{
-                        padding: '18px 20px',
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: '600',
-                        letterSpacing: '0.1em',
-                        textTransform: 'uppercase',
-                        color: '#737373'
-                      }}>{h}</th>
-                    ))}
+                    <th style={{ padding: '14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#737373', width: '80px' }}>Order</th>
+                    <th style={{ padding: '14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#737373' }}>Vehicle</th>
+                    <th style={{ padding: '14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#737373' }}>Brand</th>
+                    <th style={{ padding: '14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#737373' }}>Year</th>
+                    <th style={{ padding: '14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#737373' }}>Status</th>
+                    <th style={{ padding: '14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#737373' }}>Featured</th>
+                    <th style={{ padding: '14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#737373' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {cars.map(car => (
+                  {cars.map((car, index) => (
                     <tr key={car.id} style={{ borderTop: '1px solid #f5f5f5' }}>
-                      <td style={{ padding: '18px 20px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          <img
-                            src={car.images?.[0] || 'https://via.placeholder.com/60x40'}
-                            alt={car.title}
-                            style={{ width: '70px', height: '50px', objectFit: 'cover', borderRadius: '8px' }}
-                          />
-                          <span style={{ fontWeight: '600' }}>{car.title}</span>
+                      <td style={{ padding: '14px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <button
+                            onClick={() => moveCarUp(index)}
+                            disabled={index === 0}
+                            style={{
+                              padding: '6px',
+                              background: index === 0 ? '#f5f5f5' : '#e5e5e5',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: index === 0 ? 'not-allowed' : 'pointer',
+                              opacity: index === 0 ? 0.4 : 1
+                            }}
+                          >
+                            <ChevronUp size={16} />
+                          </button>
+                          <button
+                            onClick={() => moveCarDown(index)}
+                            disabled={index === cars.length - 1}
+                            style={{
+                              padding: '6px',
+                              background: index === cars.length - 1 ? '#f5f5f5' : '#e5e5e5',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: index === cars.length - 1 ? 'not-allowed' : 'pointer',
+                              opacity: index === cars.length - 1 ? 0.4 : 1
+                            }}
+                          >
+                            <ChevronDown size={16} />
+                          </button>
                         </div>
                       </td>
-                      <td style={{ padding: '18px 20px', color: '#525252' }}>{car.brand}</td>
-                      <td style={{ padding: '18px 20px', color: '#525252' }}>{car.year}</td>
-                      <td style={{ padding: '18px 20px' }}>
+                      <td style={{ padding: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <img src={car.images?.[0] || 'https://via.placeholder.com/60x40'} alt={car.title}
+                            style={{ width: '60px', height: '45px', objectFit: 'cover', borderRadius: '8px' }} />
+                          <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{car.title}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px', color: '#525252' }}>{car.brand}</td>
+                      <td style={{ padding: '14px', color: '#525252' }}>{car.year}</td>
+                      <td style={{ padding: '14px' }}>
                         <span style={{
-                          padding: '6px 14px',
+                          padding: '5px 12px',
                           borderRadius: '20px',
                           fontSize: '0.75rem',
                           fontWeight: '600',
-                          background: car.status === 'available' ? '#dcfce7' : 
-                                     car.status === 'reserved' ? '#fef3c7' : 
-                                     car.status === 'upcoming' ? '#ede9fe' : '#f3f4f6',
-                          color: car.status === 'available' ? '#166534' : 
-                                car.status === 'reserved' ? '#92400e' : 
-                                car.status === 'upcoming' ? '#7c3aed' : '#374151'
+                          background: car.status === 'available' ? '#dcfce7' : car.status === 'reserved' ? '#fef3c7' : car.status === 'upcoming' ? '#ede9fe' : '#f3f4f6',
+                          color: car.status === 'available' ? '#166534' : car.status === 'reserved' ? '#92400e' : car.status === 'upcoming' ? '#7c3aed' : '#374151'
                         }}>
-                          {car.status === 'upcoming' && <Clock size={12} style={{ marginRight: '4px', display: 'inline' }} />}
                           {car.status}
                         </span>
                       </td>
-                      <td style={{ padding: '18px 20px' }}>
-                        {car.featured === 1 ? <Check size={20} color="#22c55e" /> : <X size={20} color="#d4d4d4" />}
+                      <td style={{ padding: '14px' }}>
+                        {car.featured === 1 ? <Check size={18} color="#22c55e" /> : <X size={18} color="#d4d4d4" />}
                       </td>
-                      <td style={{ padding: '18px 20px' }}>
-                        <div style={{ display: 'flex', gap: '10px' }}>
+                      <td style={{ padding: '14px' }}>
+                        <div style={{ display: 'flex', gap: '8px' }}>
                           <button onClick={() => handleEditCar(car)} style={{
-                            padding: '10px', background: '#f5f5f5', border: 'none', borderRadius: '10px', cursor: 'pointer'
-                          }}><Edit2 size={18} /></button>
+                            padding: '8px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: 'pointer'
+                          }}><Edit2 size={16} /></button>
                           <button onClick={() => handleDeleteCar(car.id)} style={{
-                            padding: '10px', background: '#fef2f2', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#dc2626'
-                          }}><Trash2 size={18} /></button>
+                            padding: '8px', background: '#fef2f2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#dc2626'
+                          }}><Trash2 size={16} /></button>
                         </div>
                       </td>
                     </tr>
@@ -742,100 +785,61 @@ const AdminDashboard = () => {
         {/* Parts Tab */}
         {activeTab === 'parts' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-              <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>Manage Parts</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+              <h1 style={{ fontSize: '1.5rem', fontWeight: '700' }}>Manage Parts</h1>
               <button
                 onClick={() => { setEditingPart(null); resetPartForm(); setShowPartForm(true); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '10px',
-                  padding: '14px 28px',
+                  gap: '8px',
+                  padding: '12px 20px',
                   background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)',
                   color: '#fff',
                   border: 'none',
-                  borderRadius: '12px',
+                  borderRadius: '10px',
                   fontSize: '0.9rem',
                   fontWeight: '600',
                   cursor: 'pointer'
                 }}
               >
-                <Plus size={20} />
-                Add New Part
+                <Plus size={18} />
+                Add Part
               </button>
             </div>
 
-            <div style={{ background: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#fafafa' }}>
-                    {['Part', 'Category', 'Availability', 'Featured', 'Actions'].map(h => (
-                      <th key={h} style={{
-                        padding: '18px 20px',
-                        textAlign: 'left',
-                        fontSize: '0.75rem',
-                        fontWeight: '600',
-                        letterSpacing: '0.1em',
-                        textTransform: 'uppercase',
-                        color: '#737373'
-                      }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {parts.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ padding: '60px', textAlign: 'center', color: '#737373' }}>
-                        No parts added yet. Click "Add New Part" to get started.
-                      </td>
-                    </tr>
-                  ) : (
-                    parts.map(part => (
-                      <tr key={part.id} style={{ borderTop: '1px solid #f5f5f5' }}>
-                        <td style={{ padding: '18px 20px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                            <img
-                              src={part.images?.[0] || 'https://via.placeholder.com/60x40'}
-                              alt={part.name}
-                              style={{ width: '70px', height: '50px', objectFit: 'cover', borderRadius: '8px' }}
-                            />
-                            <span style={{ fontWeight: '600' }}>{part.name}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '18px 20px', color: '#525252' }}>{part.category}</td>
-                        <td style={{ padding: '18px 20px' }}>
-                          <span style={{
-                            padding: '6px 14px',
-                            borderRadius: '20px',
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            background: part.availability === 'in_stock' ? '#dcfce7' : 
-                                       part.availability === 'out_of_stock' ? '#fef2f2' : '#fef3c7',
-                            color: part.availability === 'in_stock' ? '#166534' : 
-                                  part.availability === 'out_of_stock' ? '#dc2626' : '#92400e'
-                          }}>
-                            {part.availability === 'in_stock' ? 'In Stock' : 
-                             part.availability === 'out_of_stock' ? 'Out of Stock' : 'Coming Soon'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '18px 20px' }}>
-                          {part.featured === 1 ? <Check size={20} color="#22c55e" /> : <X size={20} color="#d4d4d4" />}
-                        </td>
-                        <td style={{ padding: '18px 20px' }}>
-                          <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => handleEditPart(part)} style={{
-                              padding: '10px', background: '#f5f5f5', border: 'none', borderRadius: '10px', cursor: 'pointer'
-                            }}><Edit2 size={18} /></button>
-                            <button onClick={() => handleDeletePart(part.id)} style={{
-                              padding: '10px', background: '#fef2f2', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#dc2626'
-                            }}><Trash2 size={18} /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div style={{ background: '#fff', borderRadius: '16px', padding: '20px' }}>
+              {parts.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#737373', padding: '40px' }}>No parts yet</p>
+              ) : (
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  {parts.map(part => (
+                    <div key={part.id} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '16px',
+                      padding: '16px',
+                      background: '#fafafa',
+                      borderRadius: '12px'
+                    }}>
+                      <img src={part.images?.[0] || 'https://via.placeholder.com/60x45'} alt={part.name}
+                        style={{ width: '60px', height: '45px', objectFit: 'cover', borderRadius: '8px' }} />
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontWeight: '600' }}>{part.name}</p>
+                        <p style={{ fontSize: '0.85rem', color: '#737373' }}>{part.category}</p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => handleEditPart(part)} style={{
+                          padding: '8px', background: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer'
+                        }}><Edit2 size={16} /></button>
+                        <button onClick={() => handleDeletePart(part.id)} style={{
+                          padding: '8px', background: '#fef2f2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#dc2626'
+                        }}><Trash2 size={16} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -843,51 +847,42 @@ const AdminDashboard = () => {
         {/* Inquiries Tab */}
         {activeTab === 'inquiries' && (
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '40px' }}>Customer Inquiries</h1>
-
-            <div style={{ background: '#fff', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '24px' }}>Inquiries</h1>
+            <div style={{ background: '#fff', borderRadius: '16px' }}>
               {inquiries.length === 0 ? (
-                <div style={{ padding: '80px', textAlign: 'center', color: '#737373' }}>No inquiries yet</div>
+                <p style={{ textAlign: 'center', color: '#737373', padding: '60px' }}>No inquiries yet</p>
               ) : (
-                inquiries.map(inq => (
-                  <div key={inq.id} style={{ padding: '28px', borderBottom: '1px solid #f5f5f5' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                      <div>
-                        <h4 style={{ fontWeight: '600', marginBottom: '4px' }}>{inq.name}</h4>
-                        <p style={{ fontSize: '0.85rem', color: '#737373' }}>
-                          {inq.email} {inq.phone && `• ${inq.phone}`}
-                        </p>
+                <div>
+                  {inquiries.map(inquiry => (
+                    <div key={inquiry.id} style={{
+                      padding: '20px',
+                      borderBottom: '1px solid #f5f5f5'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                        <div>
+                          <p style={{ fontWeight: '600', marginBottom: '4px' }}>{inquiry.name}</p>
+                          <p style={{ fontSize: '0.85rem', color: '#737373' }}>{inquiry.email}</p>
+                          {inquiry.phone && <p style={{ fontSize: '0.85rem', color: '#737373' }}>{inquiry.phone}</p>}
+                        </div>
+                        <select
+                          value={inquiry.status}
+                          onChange={(e) => handleInquiryStatus(inquiry.id, e.target.value)}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e5e5',
+                            fontSize: '0.85rem'
+                          }}
+                        >
+                          <option value="new">New</option>
+                          <option value="contacted">Contacted</option>
+                          <option value="closed">Closed</option>
+                        </select>
                       </div>
-                      <select
-                        value={inq.status}
-                        onChange={(e) => handleInquiryStatus(inq.id, e.target.value)}
-                        style={{
-                          padding: '10px 16px',
-                          border: '2px solid #e5e5e5',
-                          borderRadius: '10px',
-                          fontSize: '0.85rem',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="contacted">Contacted</option>
-                        <option value="closed">Closed</option>
-                      </select>
+                      <p style={{ marginTop: '12px', color: '#525252', fontSize: '0.9rem', lineHeight: 1.6 }}>{inquiry.message}</p>
                     </div>
-                    {inq.car_title && (
-                      <p style={{ fontSize: '0.85rem', marginBottom: '12px' }}>
-                        <strong>Interested in:</strong> {inq.car_title}
-                      </p>
-                    )}
-                    <p style={{
-                      background: '#fafafa',
-                      padding: '16px',
-                      borderRadius: '12px',
-                      color: '#525252',
-                      lineHeight: 1.7
-                    }}>{inq.message}</p>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -898,230 +893,10 @@ const AdminDashboard = () => {
       {showCarForm && (
         <div style={{
           position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 2000,
-          padding: '20px'
-        }}>
-          <div style={{
-            background: '#fff',
-            width: '100%',
-            maxWidth: '800px',
-            maxHeight: '90vh',
-            overflow: 'auto',
-            borderRadius: '24px'
-          }}>
-            <div style={{
-              padding: '28px',
-              borderBottom: '1px solid #f0f0f0',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              position: 'sticky',
-              top: 0,
-              background: '#fff',
-              zIndex: 10
-            }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: '700' }}>
-                {editingCar ? 'Edit Car' : 'Add New Car'}
-              </h2>
-              <button onClick={() => setShowCarForm(false)} style={{
-                width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '1px solid #e5e5e5', borderRadius: '12px', background: '#fff', cursor: 'pointer'
-              }}><X size={22} /></button>
-            </div>
-
-            <form onSubmit={handleCarSubmit} style={{ padding: '28px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">Title *</label>
-                  <input type="text" className="form-input" required value={carForm.title}
-                    onChange={(e) => setCarForm({ ...carForm, title: e.target.value })}
-                    placeholder="e.g., Toyota Supra MK4 Twin Turbo" />
-                </div>
-                <div>
-                  <label className="form-label">Brand *</label>
-                  <input type="text" className="form-input" required value={carForm.brand}
-                    onChange={(e) => setCarForm({ ...carForm, brand: e.target.value })} placeholder="Toyota" />
-                </div>
-                <div>
-                  <label className="form-label">Model *</label>
-                  <input type="text" className="form-input" required value={carForm.model}
-                    onChange={(e) => setCarForm({ ...carForm, model: e.target.value })} placeholder="Supra MK4" />
-                </div>
-                <div>
-                  <label className="form-label">Year *</label>
-                  <input type="number" className="form-input" required min="1900" max="2030" value={carForm.year}
-                    onChange={(e) => setCarForm({ ...carForm, year: e.target.value })} />
-                </div>
-                <div>
-                  <label className="form-label">Mileage</label>
-                  <input type="text" className="form-input" value={carForm.mileage}
-                    onChange={(e) => setCarForm({ ...carForm, mileage: e.target.value })} placeholder="45,000 km" />
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">Engine</label>
-                  <input type="text" className="form-input" value={carForm.engine}
-                    onChange={(e) => setCarForm({ ...carForm, engine: e.target.value })} placeholder="2JZ-GTE 3.0L Twin Turbo" />
-                </div>
-                <div>
-                  <label className="form-label">Transmission</label>
-                  <select className="form-input form-select" value={carForm.transmission}
-                    onChange={(e) => setCarForm({ ...carForm, transmission: e.target.value })}>
-                    <option value="">Select</option>
-                    <option value="5-Speed Manual">5-Speed Manual</option>
-                    <option value="6-Speed Manual">6-Speed Manual</option>
-                    <option value="Automatic">Automatic</option>
-                    <option value="CVT">CVT</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Fuel Type</label>
-                  <select className="form-input form-select" value={carForm.fuel_type}
-                    onChange={(e) => setCarForm({ ...carForm, fuel_type: e.target.value })}>
-                    <option value="Petrol">Petrol</option>
-                    <option value="Diesel">Diesel</option>
-                    <option value="Hybrid">Hybrid</option>
-                    <option value="Electric">Electric</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Color</label>
-                  <input type="text" className="form-input" value={carForm.color}
-                    onChange={(e) => setCarForm({ ...carForm, color: e.target.value })} placeholder="Super White" />
-                </div>
-                <div>
-                  <label className="form-label">Body Type</label>
-                  <select className="form-input form-select" value={carForm.body_type}
-                    onChange={(e) => setCarForm({ ...carForm, body_type: e.target.value })}>
-                    <option value="">Select</option>
-                    <option value="Sedan">Sedan</option>
-                    <option value="Coupe">Coupe</option>
-                    <option value="SUV">SUV</option>
-                    <option value="Hatchback">Hatchback</option>
-                  </select>
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">Description</label>
-                  <textarea className="form-input form-textarea" value={carForm.description}
-                    onChange={(e) => setCarForm({ ...carForm, description: e.target.value })} rows={3} />
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">Features (comma separated)</label>
-                  <input type="text" className="form-input" value={carForm.features}
-                    onChange={(e) => setCarForm({ ...carForm, features: e.target.value })}
-                    placeholder="Leather Interior, Sunroof, Navigation" />
-                </div>
-
-                {/* File Upload */}
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">Images & Videos</label>
-                  <div
-                    style={{
-                      border: '2px dashed #e5e5e5', borderRadius: '16px', padding: '32px',
-                      textAlign: 'center', background: '#fafafa', cursor: 'pointer'
-                    }}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <input ref={fileInputRef} type="file" multiple accept="image/*,video/*"
-                      onChange={handleFileUpload} style={{ display: 'none' }} />
-                    {uploading ? (
-                      <div>
-                        <div className="spinner" style={{ margin: '0 auto 16px', width: '40px', height: '40px' }} />
-                        <p>Uploading... {uploadProgress}%</p>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload size={40} color="#c41e3a" style={{ marginBottom: '16px' }} />
-                        <p style={{ fontWeight: '600' }}>Click to upload or drag & drop</p>
-                        <p style={{ fontSize: '0.85rem', color: '#737373' }}>Images & Videos (Max 100MB)</p>
-                      </>
-                    )}
-                  </div>
-
-                  {carForm.images.length > 0 && (
-                    <div style={{ marginTop: '20px' }}>
-                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px' }}>
-                        <Image size={16} style={{ display: 'inline', marginRight: '8px' }} />
-                        Images ({carForm.images.length})
-                      </p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                        {carForm.images.map((img, index) => (
-                          <div key={index} style={{ position: 'relative' }}>
-                            <img src={img} alt="" style={{ width: '100px', height: '80px', objectFit: 'cover', borderRadius: '10px' }} />
-                            <button type="button" onClick={() => removeMedia('image', index)} style={{
-                              position: 'absolute', top: '-8px', right: '-8px', width: '24px', height: '24px',
-                              background: '#dc2626', color: '#fff', border: 'none', borderRadius: '50%', cursor: 'pointer'
-                            }}><X size={14} /></button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {carForm.videos.length > 0 && (
-                    <div style={{ marginTop: '20px' }}>
-                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px' }}>
-                        <Video size={16} style={{ display: 'inline', marginRight: '8px' }} />
-                        Videos ({carForm.videos.length})
-                      </p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                        {carForm.videos.map((vid, index) => (
-                          <div key={index} style={{ position: 'relative' }}>
-                            <video src={vid} style={{ width: '120px', height: '80px', objectFit: 'cover', borderRadius: '10px' }} />
-                            <button type="button" onClick={() => removeMedia('video', index)} style={{
-                              position: 'absolute', top: '-8px', right: '-8px', width: '24px', height: '24px',
-                              background: '#dc2626', color: '#fff', border: 'none', borderRadius: '50%', cursor: 'pointer'
-                            }}><X size={14} /></button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="form-label">Status</label>
-                  <select className="form-input form-select" value={carForm.status}
-                    onChange={(e) => setCarForm({ ...carForm, status: e.target.value })}>
-                    <option value="available">Available</option>
-                    <option value="reserved">Reserved</option>
-                    <option value="sold">Sold</option>
-                    <option value="upcoming">Upcoming</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Featured</label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', border: '2px solid #e5e5e5', borderRadius: '12px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={carForm.featured}
-                      onChange={(e) => setCarForm({ ...carForm, featured: e.target.checked })}
-                      style={{ width: '20px', height: '20px' }} />
-                    <span>Show on homepage</span>
-                  </label>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '16px', marginTop: '32px' }}>
-                <button type="button" onClick={() => setShowCarForm(false)} className="btn btn-secondary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
-                  {editingCar ? 'Update Car' : 'Add Car'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Part Form Modal */}
-      {showPartForm && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
           background: 'rgba(0,0,0,0.7)',
           display: 'flex',
           alignItems: 'center',
@@ -1135,10 +910,10 @@ const AdminDashboard = () => {
             maxWidth: '600px',
             maxHeight: '90vh',
             overflow: 'auto',
-            borderRadius: '24px'
+            borderRadius: '20px'
           }}>
             <div style={{
-              padding: '28px',
+              padding: '20px 24px',
               borderBottom: '1px solid #f0f0f0',
               display: 'flex',
               justifyContent: 'space-between',
@@ -1148,128 +923,428 @@ const AdminDashboard = () => {
               background: '#fff',
               zIndex: 10
             }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: '700' }}>
+              <h2 style={{ fontSize: '1.3rem', fontWeight: '700' }}>
+                {editingCar ? 'Edit Car' : 'Add New Car'}
+              </h2>
+              <button onClick={() => setShowCarForm(false)} style={{
+                width: '40px',
+                height: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #e5e5e5',
+                borderRadius: '10px',
+                background: '#fff',
+                cursor: 'pointer'
+              }}><X size={20} /></button>
+            </div>
+
+            <form onSubmit={handleCarSubmit} style={{ padding: '24px' }}>
+              <div style={{ display: 'grid', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Title *</label>
+                  <input type="text" required value={carForm.title}
+                    onChange={(e) => setCarForm({ ...carForm, title: e.target.value })}
+                    style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Brand *</label>
+                    <input type="text" required value={carForm.brand}
+                      onChange={(e) => setCarForm({ ...carForm, brand: e.target.value })}
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Model *</label>
+                    <input type="text" required value={carForm.model}
+                      onChange={(e) => setCarForm({ ...carForm, model: e.target.value })}
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Year *</label>
+                    <input type="number" required value={carForm.year}
+                      onChange={(e) => setCarForm({ ...carForm, year: e.target.value })}
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Mileage</label>
+                    <input type="text" value={carForm.mileage}
+                      onChange={(e) => setCarForm({ ...carForm, mileage: e.target.value })}
+                      placeholder="e.g., 50,000 km"
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Engine</label>
+                  <input type="text" value={carForm.engine}
+                    onChange={(e) => setCarForm({ ...carForm, engine: e.target.value })}
+                    placeholder="e.g., 1.5L Turbo"
+                    style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Transmission</label>
+                    <select value={carForm.transmission}
+                      onChange={(e) => setCarForm({ ...carForm, transmission: e.target.value })}
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }}>
+                      <option value="">Select</option>
+                      <option value="Automatic">Automatic</option>
+                      <option value="Manual">Manual</option>
+                      <option value="CVT">CVT</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Fuel Type</label>
+                    <select value={carForm.fuel_type}
+                      onChange={(e) => setCarForm({ ...carForm, fuel_type: e.target.value })}
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }}>
+                      <option value="Petrol">Petrol</option>
+                      <option value="Diesel">Diesel</option>
+                      <option value="Hybrid">Hybrid</option>
+                      <option value="Electric">Electric</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Color</label>
+                    <input type="text" value={carForm.color}
+                      onChange={(e) => setCarForm({ ...carForm, color: e.target.value })}
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Body Type</label>
+                    <select value={carForm.body_type}
+                      onChange={(e) => setCarForm({ ...carForm, body_type: e.target.value })}
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }}>
+                      <option value="">Select</option>
+                      <option value="Sedan">Sedan</option>
+                      <option value="SUV">SUV</option>
+                      <option value="Hatchback">Hatchback</option>
+                      <option value="Coupe">Coupe</option>
+                      <option value="Wagon">Wagon</option>
+                      <option value="Van">Van</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Description</label>
+                  <textarea value={carForm.description}
+                    onChange={(e) => setCarForm({ ...carForm, description: e.target.value })}
+                    rows={3}
+                    style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem', resize: 'vertical' }} />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Features (comma-separated)</label>
+                  <input type="text" value={carForm.features}
+                    onChange={(e) => setCarForm({ ...carForm, features: e.target.value })}
+                    placeholder="AC, Sunroof, Navigation"
+                    style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
+                </div>
+
+                {/* Image Upload */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Images & Videos</label>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      border: '2px dashed #e5e5e5',
+                      borderRadius: '12px',
+                      padding: '24px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      background: '#fafafa'
+                    }}
+                  >
+                    <input ref={fileInputRef} type="file" multiple accept="image/*,video/*" onChange={handleFileUpload} style={{ display: 'none' }} />
+                    {uploading ? (
+                      <p>Uploading... {uploadProgress}%</p>
+                    ) : (
+                      <>
+                        <Upload size={32} color="#c41e3a" style={{ marginBottom: '8px' }} />
+                        <p style={{ fontWeight: '600' }}>Click to upload</p>
+                        <p style={{ fontSize: '0.8rem', color: '#737373' }}>Images & Videos</p>
+                      </>
+                    )}
+                  </div>
+
+                  {carForm.images.length > 0 && (
+                    <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {carForm.images.map((img, i) => (
+                        <div key={i} style={{ position: 'relative' }}>
+                          <img src={img} alt="" style={{ width: '70px', height: '55px', objectFit: 'cover', borderRadius: '8px' }} />
+                          <button type="button" onClick={() => removeMedia('image', i)} style={{
+                            position: 'absolute', top: '-6px', right: '-6px', width: '20px', height: '20px',
+                            background: '#dc2626', color: '#fff', border: 'none', borderRadius: '50%', cursor: 'pointer', fontSize: '12px'
+                          }}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Status</label>
+                    <select value={carForm.status}
+                      onChange={(e) => setCarForm({ ...carForm, status: e.target.value })}
+                      style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }}>
+                      <option value="available">Available</option>
+                      <option value="reserved">Reserved</option>
+                      <option value="sold">Sold</option>
+                      <option value="upcoming">Upcoming</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Featured</label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={carForm.featured}
+                        onChange={(e) => setCarForm({ ...carForm, featured: e.target.checked })}
+                        style={{ width: '18px', height: '18px' }} />
+                      <span>Show on homepage</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button type="button" onClick={() => setShowCarForm(false)} style={{
+                  flex: 1, padding: '14px', background: '#f5f5f5', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer'
+                }}>Cancel</button>
+                <button type="submit" style={{
+                  flex: 1, padding: '14px', background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer'
+                }}>{editingCar ? 'Update' : 'Add Car'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Part Form Modal */}
+      {showPartForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#fff',
+            width: '100%',
+            maxWidth: '500px',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            borderRadius: '20px'
+          }}>
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid #f0f0f0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <h2 style={{ fontSize: '1.3rem', fontWeight: '700' }}>
                 {editingPart ? 'Edit Part' : 'Add New Part'}
               </h2>
               <button onClick={() => setShowPartForm(false)} style={{
-                width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '1px solid #e5e5e5', borderRadius: '12px', background: '#fff', cursor: 'pointer'
-              }}><X size={22} /></button>
+                width: '40px',
+                height: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #e5e5e5',
+                borderRadius: '10px',
+                background: '#fff',
+                cursor: 'pointer'
+              }}><X size={20} /></button>
             </div>
 
-            <form onSubmit={handlePartSubmit} style={{ padding: '28px' }}>
-              <div style={{ display: 'grid', gap: '20px' }}>
+            <form onSubmit={handlePartSubmit} style={{ padding: '24px' }}>
+              <div style={{ display: 'grid', gap: '16px' }}>
                 <div>
-                  <label className="form-label">Part Name *</label>
-                  <input type="text" className="form-input" required value={partForm.name}
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Name *</label>
+                  <input type="text" required value={partForm.name}
                     onChange={(e) => setPartForm({ ...partForm, name: e.target.value })}
-                    placeholder="e.g., 2JZ-GTE Twin Turbo Engine" />
+                    style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }} />
                 </div>
-                
+
                 <div>
-                  <label className="form-label">Category *</label>
-                  <select className="form-input form-select" required value={partForm.category}
-                    onChange={(e) => setPartForm({ ...partForm, category: e.target.value })}>
-                    <option value="">Select Category</option>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Category *</label>
+                  <select required value={partForm.category}
+                    onChange={(e) => setPartForm({ ...partForm, category: e.target.value })}
+                    style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }}>
+                    <option value="">Select</option>
                     <option value="Engine Parts">Engine Parts</option>
                     <option value="Body Parts">Body Parts</option>
-                    <option value="Accessories">Accessories</option>
                     <option value="Interior">Interior</option>
                     <option value="Exterior">Exterior</option>
-                    <option value="Suspension">Suspension</option>
-                    <option value="Brakes">Brakes</option>
-                    <option value="Exhaust">Exhaust</option>
                     <option value="Electrical">Electrical</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="form-label">Description</label>
-                  <textarea className="form-input form-textarea" value={partForm.description}
-                    onChange={(e) => setPartForm({ ...partForm, description: e.target.value })} rows={4}
-                    placeholder="Describe the part, condition, compatibility..." />
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Description</label>
+                  <textarea value={partForm.description}
+                    onChange={(e) => setPartForm({ ...partForm, description: e.target.value })}
+                    rows={3}
+                    style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem', resize: 'vertical' }} />
                 </div>
 
-                {/* File Upload */}
                 <div>
-                  <label className="form-label">Images</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Images</label>
                   <div
-                    style={{
-                      border: '2px dashed #e5e5e5', borderRadius: '16px', padding: '32px',
-                      textAlign: 'center', background: '#fafafa', cursor: 'pointer'
-                    }}
                     onClick={() => partFileInputRef.current?.click()}
+                    style={{
+                      border: '2px dashed #e5e5e5',
+                      borderRadius: '12px',
+                      padding: '24px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      background: '#fafafa'
+                    }}
                   >
-                    <input ref={partFileInputRef} type="file" multiple accept="image/*"
-                      onChange={handlePartFileUpload} style={{ display: 'none' }} />
-                    {uploading ? (
-                      <div>
-                        <div className="spinner" style={{ margin: '0 auto 16px', width: '40px', height: '40px' }} />
-                        <p>Uploading... {uploadProgress}%</p>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload size={40} color="#c41e3a" style={{ marginBottom: '16px' }} />
-                        <p style={{ fontWeight: '600' }}>Click to upload images</p>
-                        <p style={{ fontSize: '0.85rem', color: '#737373' }}>JPG, PNG, WebP (Max 10MB)</p>
-                      </>
-                    )}
+                    <input ref={partFileInputRef} type="file" multiple accept="image/*" onChange={handlePartFileUpload} style={{ display: 'none' }} />
+                    <Upload size={28} color="#c41e3a" style={{ marginBottom: '8px' }} />
+                    <p style={{ fontWeight: '600', fontSize: '0.9rem' }}>Upload images</p>
                   </div>
 
                   {partForm.images.length > 0 && (
-                    <div style={{ marginTop: '20px' }}>
-                      <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#737373', marginBottom: '12px' }}>
-                        Images ({partForm.images.length})
-                      </p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                        {partForm.images.map((img, index) => (
-                          <div key={index} style={{ position: 'relative' }}>
-                            <img src={img} alt="" style={{ width: '100px', height: '80px', objectFit: 'cover', borderRadius: '10px' }} />
-                            <button type="button" onClick={() => removePartImage(index)} style={{
-                              position: 'absolute', top: '-8px', right: '-8px', width: '24px', height: '24px',
-                              background: '#dc2626', color: '#fff', border: 'none', borderRadius: '50%', cursor: 'pointer'
-                            }}><X size={14} /></button>
-                          </div>
-                        ))}
-                      </div>
+                    <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {partForm.images.map((img, i) => (
+                        <div key={i} style={{ position: 'relative' }}>
+                          <img src={img} alt="" style={{ width: '60px', height: '45px', objectFit: 'cover', borderRadius: '6px' }} />
+                          <button type="button" onClick={() => removePartImage(i)} style={{
+                            position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
+                            background: '#dc2626', color: '#fff', border: 'none', borderRadius: '50%', cursor: 'pointer', fontSize: '11px'
+                          }}>×</button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <label className="form-label">Availability</label>
-                  <select className="form-input form-select" value={partForm.availability}
-                    onChange={(e) => setPartForm({ ...partForm, availability: e.target.value })}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '6px' }}>Availability</label>
+                  <select value={partForm.availability}
+                    onChange={(e) => setPartForm({ ...partForm, availability: e.target.value })}
+                    style={{ width: '100%', padding: '12px', border: '2px solid #e5e5e5', borderRadius: '10px', fontSize: '1rem' }}>
                     <option value="in_stock">In Stock</option>
                     <option value="out_of_stock">Out of Stock</option>
                     <option value="coming_soon">Coming Soon</option>
                   </select>
                 </div>
-
-                <div>
-                  <label className="form-label">Featured</label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', border: '2px solid #e5e5e5', borderRadius: '12px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={partForm.featured}
-                      onChange={(e) => setPartForm({ ...partForm, featured: e.target.checked })}
-                      style={{ width: '20px', height: '20px' }} />
-                    <span>Show as featured part</span>
-                  </label>
-                </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '16px', marginTop: '32px' }}>
-                <button type="button" onClick={() => setShowPartForm(false)} className="btn btn-secondary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '16px', borderRadius: '12px' }}>
-                  {editingPart ? 'Update Part' : 'Add Part'}
-                </button>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button type="button" onClick={() => setShowPartForm(false)} style={{
+                  flex: 1, padding: '14px', background: '#f5f5f5', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer'
+                }}>Cancel</button>
+                <button type="submit" style={{
+                  flex: 1, padding: '14px', background: 'linear-gradient(135deg, #c41e3a 0%, #e63950 100%)', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer'
+                }}>{editingPart ? 'Update' : 'Add Part'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <style>{`
+        .mobile-admin-header {
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 60px;
+          background: #fff;
+          border-bottom: 1px solid #e5e5e5;
+          padding: 0 16px;
+          align-items: center;
+          justify-content: space-between;
+          z-index: 100;
+        }
+        .admin-sidebar {
+          width: 260px;
+          background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+          position: fixed;
+          top: 0;
+          left: 0;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
+          z-index: 999;
+        }
+        .admin-main {
+          flex: 1;
+          margin-left: 260px;
+          padding: 30px;
+          min-height: 100vh;
+        }
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 20px;
+        }
+        .cars-list-mobile {
+          display: none;
+        }
+        .cars-table-desktop {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        
+        @media (max-width: 1100px) {
+          .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        
+        @media (max-width: 900px) {
+          .mobile-admin-header {
+            display: flex;
+          }
+          .admin-sidebar {
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+          }
+          .admin-sidebar.open {
+            transform: translateX(0);
+          }
+          .admin-main {
+            margin-left: 0;
+            padding: 80px 16px 30px;
+          }
+          .cars-list-mobile {
+            display: block;
+          }
+          .cars-table-desktop {
+            display: none;
+          }
+        }
+        
+        @media (max-width: 500px) {
+          .stats-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
     </div>
   );
 };

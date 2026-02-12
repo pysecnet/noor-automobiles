@@ -1,44 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const { body, validationResult } = require('express-validator');
 const { query } = require('../config/database');
 const { authenticateToken, isAdmin } = require('../middleware/auth');
-
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../uploads/cars');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|webp|gif|mp4|webm|mov/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
-  
-  if (extname && mimetype) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only images (jpeg, jpg, png, webp, gif) and videos (mp4, webm, mov) are allowed'));
-  }
-};
-
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 100 * 1024 * 1024 } // 100MB max
-});
+const { upload, cloudinary } = require('../config/cloudinary');
 
 // Upload files endpoint
 router.post('/upload', authenticateToken, isAdmin, upload.array('files', 10), (req, res) => {
@@ -48,10 +13,11 @@ router.post('/upload', authenticateToken, isAdmin, upload.array('files', 10), (r
     }
 
     const fileUrls = req.files.map(file => {
-      const isVideo = /mp4|webm|mov/.test(path.extname(file.originalname).toLowerCase());
+      const isVideo = file.mimetype.startsWith('video/');
       return {
-        url: `/uploads/cars/${file.filename}`,
+        url: file.path,
         type: isVideo ? 'video' : 'image',
+        publicId: file.filename,
         originalName: file.originalname
       };
     });
@@ -63,8 +29,28 @@ router.post('/upload', authenticateToken, isAdmin, upload.array('files', 10), (r
   }
 });
 
+// Reorder cars (admin only) - MUST BE BEFORE /:id route
+router.put('/reorder', authenticateToken, isAdmin, async (req, res) => {
+  const { carIds } = req.body;
+  
+  if (!carIds || !Array.isArray(carIds)) {
+    return res.status(400).json({ message: 'carIds array is required' });
+  }
+
+  try {
+    for (let i = 0; i < carIds.length; i++) {
+      await query.run('UPDATE cars SET display_order = ? WHERE id = ?', [i, carIds[i]]);
+    }
+    
+    res.json({ message: 'Cars reordered successfully' });
+  } catch (error) {
+    console.error('Error reordering cars:', error);
+    res.status(500).json({ message: 'Server error reordering cars' });
+  }
+});
+
 // Get all cars (public)
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { brand, status, featured, search, upcoming } = req.query;
     
@@ -92,15 +78,14 @@ router.get('/', (req, res) => {
 
     if (search) {
       sql += ' AND (title LIKE ? OR brand LIKE ? OR model LIKE ? OR description LIKE ?)';
-      const searchTerm = `%${search}%`;
+      const searchTerm = '%' + search + '%';
       params.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
-    sql += ' ORDER BY featured DESC, created_at DESC';
+    sql += ' ORDER BY featured DESC, display_order ASC, created_at DESC';
 
-    const cars = query.all(sql, params);
+    const cars = await query.all(sql, params);
     
-    // Parse JSON fields
     const parsedCars = cars.map(car => ({
       ...car,
       features: JSON.parse(car.features || '[]'),
@@ -116,9 +101,9 @@ router.get('/', (req, res) => {
 });
 
 // Get single car (public)
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const car = query.get('SELECT * FROM cars WHERE id = ?', [req.params.id]);
+    const car = await query.get('SELECT * FROM cars WHERE id = ?', [req.params.id]);
     
     if (!car) {
       return res.status(404).json({ message: 'Car not found' });
@@ -136,9 +121,9 @@ router.get('/:id', (req, res) => {
 });
 
 // Get all brands (public)
-router.get('/meta/brands', (req, res) => {
+router.get('/meta/brands', async (req, res) => {
   try {
-    const brands = query.all('SELECT DISTINCT brand FROM cars ORDER BY brand');
+    const brands = await query.all('SELECT DISTINCT brand FROM cars ORDER BY brand');
     res.json(brands.map(b => b.brand));
   } catch (error) {
     console.error('Error fetching brands:', error);
@@ -152,7 +137,7 @@ router.post('/', authenticateToken, isAdmin, [
   body('brand').trim().notEmpty().withMessage('Brand is required'),
   body('model').trim().notEmpty().withMessage('Model is required'),
   body('year').isInt({ min: 1900, max: 2030 }).withMessage('Valid year is required')
-], (req, res) => {
+], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -164,17 +149,17 @@ router.post('/', authenticateToken, isAdmin, [
   } = req.body;
 
   try {
-    const result = query.run(`
-      INSERT INTO cars (title, brand, model, year, mileage, engine, transmission, fuel_type, color, body_type, description, features, images, videos, status, featured)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      title, brand, model, year, mileage || null, engine || null, transmission || null,
-      fuel_type || null, color || null, body_type || null, description || null,
-      JSON.stringify(features || []), JSON.stringify(images || []), JSON.stringify(videos || []),
-      status || 'available', featured ? 1 : 0
-    ]);
+    const result = await query.run(
+      'INSERT INTO cars (title, brand, model, year, mileage, engine, transmission, fuel_type, color, body_type, description, features, images, videos, status, featured, display_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        title, brand, model, year, mileage || null, engine || null, transmission || null,
+        fuel_type || null, color || null, body_type || null, description || null,
+        JSON.stringify(features || []), JSON.stringify(images || []), JSON.stringify(videos || []),
+        status || 'available', featured ? 1 : 0, Date.now()
+      ]
+    );
 
-    const newCar = query.get('SELECT * FROM cars WHERE id = ?', [result.lastInsertRowid]);
+    const newCar = await query.get('SELECT * FROM cars WHERE id = ?', [result.lastInsertRowid]);
     newCar.features = JSON.parse(newCar.features || '[]');
     newCar.images = JSON.parse(newCar.images || '[]');
     newCar.videos = JSON.parse(newCar.videos || '[]');
@@ -187,10 +172,10 @@ router.post('/', authenticateToken, isAdmin, [
 });
 
 // Update car (admin only)
-router.put('/:id', authenticateToken, isAdmin, (req, res) => {
+router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
   const carId = req.params.id;
   
-  const existingCar = query.get('SELECT id FROM cars WHERE id = ?', [carId]);
+  const existingCar = await query.get('SELECT id FROM cars WHERE id = ?', [carId]);
   if (!existingCar) {
     return res.status(404).json({ message: 'Car not found' });
   }
@@ -224,9 +209,9 @@ router.put('/:id', authenticateToken, isAdmin, (req, res) => {
     updates.push('updated_at = CURRENT_TIMESTAMP');
     params.push(carId);
     
-    query.run(`UPDATE cars SET ${updates.join(', ')} WHERE id = ?`, params);
+    await query.run('UPDATE cars SET ' + updates.join(', ') + ' WHERE id = ?', params);
 
-    const updatedCar = query.get('SELECT * FROM cars WHERE id = ?', [carId]);
+    const updatedCar = await query.get('SELECT * FROM cars WHERE id = ?', [carId]);
     updatedCar.features = JSON.parse(updatedCar.features || '[]');
     updatedCar.images = JSON.parse(updatedCar.images || '[]');
     updatedCar.videos = JSON.parse(updatedCar.videos || '[]');
@@ -239,16 +224,16 @@ router.put('/:id', authenticateToken, isAdmin, (req, res) => {
 });
 
 // Delete car (admin only)
-router.delete('/:id', authenticateToken, isAdmin, (req, res) => {
+router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
   const carId = req.params.id;
 
   try {
-    const car = query.get('SELECT id FROM cars WHERE id = ?', [carId]);
+    const car = await query.get('SELECT images, videos FROM cars WHERE id = ?', [carId]);
     if (!car) {
       return res.status(404).json({ message: 'Car not found' });
     }
 
-    query.run('DELETE FROM cars WHERE id = ?', [carId]);
+    await query.run('DELETE FROM cars WHERE id = ?', [carId]);
     
     res.json({ message: 'Car deleted successfully' });
   } catch (error) {

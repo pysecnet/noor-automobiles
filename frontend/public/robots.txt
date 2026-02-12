@@ -1,0 +1,18 @@
+# Robots.txt for Noor Automobiles
+# https://noorautomobiles.pk
+
+User-agent: *
+Allow: /
+
+# Disallow admin area
+Disallow: /admin
+
+# Sitemap location
+Sitemap: https://noorautomobiles.pk/sitemap.xml
+
+# Crawl delay (be nice to the server)
+Crawl-delay: 1
+
+# Block unnecessary files
+Disallow: /*.json$
+Disallow: /sw.js
